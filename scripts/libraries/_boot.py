@@ -24,20 +24,8 @@ import os
 import sys
 import vfs
 
-main_py = """import time
-from machine import LED
-
-led = LED("LED_BLUE")
-
-while True:
-    led.on()
-    time.sleep_ms(150)
-    led.off()
-    time.sleep_ms(100)
-    led.on()
-    time.sleep_ms(150)
-    led.off()
-    time.sleep_ms(600)
+main_py = """# main.py -- put your code here
+print("OpenMV ESP32P4 ready")
 """
 
 readme_txt = """Thank you for supporting the OpenMV project!
@@ -76,6 +64,15 @@ if bdev is None:
         bdev = mimxrt.Flash()
         sdcard = machine.SDCard(1)
         del mimxrt, machine
+    except Exception:
+        pass
+
+if bdev is None:
+    try:
+        from flashbdev import bdev as flash_bdev
+
+        bdev = flash_bdev
+        del flash_bdev
     except Exception:
         pass
 

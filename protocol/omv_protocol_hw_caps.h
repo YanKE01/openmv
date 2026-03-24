@@ -29,7 +29,11 @@
 #define __OMV_PROTOCOL_HW_CAPS_H__
 
 #include <stdint.h>
+#if defined(__has_include)
+#if __has_include("cmsis_gcc.h")
 #include "cmsis_gcc.h"
+#endif
+#endif
 
 #ifndef __PMU_NUM_EVENTCNT
 #define __PMU_NUM_EVENTCNT 0

@@ -21,7 +21,7 @@
 
 ## 当前状态
 
-更新时间：`2026-03-24 19:00:17 +0800`
+更新时间：`2026-03-24 20:19:11 +0800`
 
 ### Phase 1 进展
 
@@ -59,9 +59,45 @@
 ### 第一阶段当前结论
 
 - 第一阶段“只要求构建通过”的目标已达成。
-- 当前还没有开始做 IDE 通信链路。
 - 当前还没有开始做 CSI 摄像头和 OpenMV 外设抽象层。
 - 当前 `deploy/monitor` 只是复用 `idf.py flash/monitor`，还没有做 OpenMV IDE 侧联机集成。
+- 已确认第二阶段优先级：先跑通 OpenMV IDE 连接，再做 CSI 摄像头。
+- 已确认 `ESP32P4` 这边要按 `USB HS` 方向设计 IDE 通路，而不是把普通 UART/USB Serial-JTAG 当成最终方案。
+
+### Phase 2 当前进展
+
+- 已完成 `esp32` 端口的第二阶段最小 IDE 骨架接入，并确认 `make TARGET=ESP32_GENERIC_P4 -j4` 重新编译通过。
+- 已在 `lib/micropython/ports/esp32/esp32_common.cmake` 增加主入口覆盖能力，允许 OpenMV 使用自有的 `ports/esp32/main.c` 接管启动主循环。
+- 已新增 `ports/esp32/main.c`，当前主循环已切换为 OpenMV 风格：
+  - 初始化 OpenMV protocol
+  - 进入 `omv_protocol_exec_script()` + REPL 循环
+  - 复用 `ESP32P4` upstream 的 `USB HS + TinyUSB CDC` 初始化链路
+- 已在 `ports/esp32/micropython.cmake` 中接入最小协议源码集合：
+  - `protocol/omv_protocol.c`
+  - `protocol/omv_protocol_channel_tinyusb.c`
+  - `protocol/omv_protocol_channel_stdio.c`
+  - `common/omv_crc.c`
+- 当前第二阶段只接入最小通道集合：
+  - `omv_usb_channel`
+  - `omv_stdin_channel`
+  - `omv_stdout_channel`
+- 已完成联板验证：
+  - `USB HS` 已正常枚举为 CDC 设备
+  - OpenMV IDE 已能识别板子并建立会话
+  - 已抓到完整握手日志：`PROTO_SYNC` / `CHANNEL_LIST` / `PROTO_VERSION` / `SYS_INFO`
+  - IDE 已可运行脚本
+- 已确认运行态 `VID/PID` 采用 `0x37C5:0x1204` 可被 OpenMV IDE 正常识别。
+- 已完成文件系统启动链路修复：
+  - OpenMV `_boot.py` 已补上 `esp32 flashbdev` 识别
+  - `boards/ESP32_GENERIC_P4/manifest.py` 已显式冻结 `flashbdev.py`
+  - 首次全擦重刷后，`/flash` 文件系统可正常初始化，不再报 `readblocks` 异常
+- 已将首次生成的默认 `main.py` 模板改为不依赖 `machine.LED` 的通用版本，避免 `ImportError: can't import name LED`。
+- 当前明确不包含的内容：
+  - `omv_stream_channel`
+  - framebuffer 通道
+  - CSI 摄像头采集链路
+- 已完成若干 `esp32` 兼容性收口，避免 `CMSIS/NVIC/framebuffer` 等 ARM 假设阻塞 `ESP32P4` 编译。
+- 当前仍保留了用于定位 IDE 握手的临时调试日志，后续需要在提交前移除。
 
 ### 已知后续事项
 
@@ -147,20 +183,38 @@ make TARGET=ESP32_GENERIC_P4 monitor ESPPORT=/dev/ttyACM0
 - 不要求 IDE 可连接。
 - 不要求 CSI 摄像头工作。
 
-### Phase 2: IDE 链路打通
+### Phase 2: OpenMV IDE 链路打通
 
-- 明确 ESP32P4 首版与 OpenMV IDE 的通信方式：
-  - USB CDC
-  - USB Serial/JTAG
-  - UART 作为临时回退
-- 验证 REPL、脚本下载、文件系统访问、基础控制命令。
-- 处理 OpenMV IDE 依赖的板型识别、USB VID/PID、产品名和启动行为。
-- 如果现有 OpenMV IDE 协议依赖特定端口行为，补齐 `esp32` 侧兼容层。
+- 以 `USB HS` 作为 `ESP32P4` 的首选连接路径，优先打通 OpenMV IDE，而不是先做 CSI。
+- `esp32` 端口优先对齐 OpenMV 新协议路径：
+  - 初始化 `omv_protocol_init_default()`
+  - 挂接 `omv_usb_channel`
+  - 复用 TinyUSB CDC transport，而不是旧的 `usbdbg` 专用实现
+- 需要注意 OpenMV IDE 的 TinyUSB CDC transport 不是“普通串口可见”就够了：
+  - `protocol/omv_protocol_channel_tinyusb.c` 通过 `CDC line coding`
+  - 使用 `OMV_PROTOCOL_MAGIC_BAUDRATE=921600` 切换到 IDE protocol 模式
+- `USB Serial/JTAG` 和 UART 可以保留为调试/REPL 回退，但不作为 OpenMV IDE 主通道。
+- 验证项包括：
+  - IDE 识别板子
+  - 协议握手
+  - 脚本下载执行
+  - REPL/标准输出
+  - 文件系统访问
+- 处理 OpenMV IDE 依赖的板型识别、USB VID/PID、产品名、枚举方式和启动行为。
+- 如有需要，在 `ports/esp32` 增加 TinyUSB/USB HS 相关 glue code，把 OpenMV protocol 和 MicroPython USB 回调正确接起来。
 
 验收标准：
 
 - OpenMV IDE 能识别板子并建立会话。
 - 能下载运行脚本，能看到串口/REPL 输出。
+
+当前下一步：
+
+- 收掉 `esp32` 侧为 IDE 联机添加的临时调试日志。
+- 继续补齐第二阶段剩余的体验项：
+  - 校验文件系统读写与脚本保存
+  - 校验 IDE 侧重连/软复位行为
+- 第二阶段收尾后转入 CSI 摄像头接入。
 
 ### Phase 3: CSI 摄像头接入
 
@@ -194,8 +248,8 @@ make TARGET=ESP32_GENERIC_P4 monitor ESPPORT=/dev/ttyACM0
 
 1. 建立 `ports/esp32` 最小目录和 OpenMV 板级目录。
 2. 用 `make TARGET=ESP32_GENERIC_P4 clean && make TARGET=ESP32_GENERIC_P4` 打通编译路径。
-3. 只修编译和链接问题，不在这一轮混入 IDE/CSI 驱动。
-4. 编译产物稳定后，再进入 IDE 链路。
+3. 联板启动并确认基础 REPL/烧录链路可用。
+4. 优先打通 `USB HS + TinyUSB CDC + OpenMV protocol` 的 IDE 链路。
 5. IDE 通了以后，再做 `omv_csi.c` 的真实摄像头接入。
 
 ## 当前不纳入第一阶段的内容
