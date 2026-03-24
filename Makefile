@@ -27,6 +27,10 @@ ifeq ($(TARGET),)
   endif
 endif
 
+# Include board config early so target-specific logic can branch on PORT.
+OMV_BOARD_CONFIG_DIR:=$(CURDIR)/boards/$(TARGET)/
+include $(OMV_BOARD_CONFIG_DIR)/omv_boardconfig.mk
+
 # OpenMV SDK configuration
 SDK_VERSION = 1.0.0
 SDK_DIR ?= $(HOME)/openmv-sdk-$(SDK_VERSION)
@@ -34,12 +38,14 @@ SDK_STAMP = $(SDK_DIR)/sdk.version
 
 # Check if the SDK is downloaded
 ifeq ($(filter sdk clean,$(MAKECMDGOALS)),)
-  ifeq ($(wildcard $(SDK_STAMP)),)
-    $(error OpenMV SDK not found. Run 'make sdk' to install it.)
-  else
-    SDK_INSTALLED := $(shell cat $(SDK_STAMP))
-    ifneq ($(SDK_INSTALLED),$(SDK_VERSION))
-      $(error OpenMV SDK version mismatch. Run 'make sdk'.)
+  ifneq ($(PORT),esp32)
+    ifeq ($(wildcard $(SDK_STAMP)),)
+      $(error OpenMV SDK not found. Run 'make sdk' to install it.)
+    else
+      SDK_INSTALLED := $(shell cat $(SDK_STAMP))
+      ifneq ($(SDK_INSTALLED),$(SDK_VERSION))
+        $(error OpenMV SDK version mismatch. Run 'make sdk'.)
+      endif
     endif
   endif
 endif
@@ -140,9 +146,6 @@ CFLAGS += -DOMV_PROFILER_HASH_SIZE=$(PROFILE_HASH)
 CFLAGS += -DOMV_PROFILER_IRQ_ENABLE=$(PROFILE_IRQ)
 CFLAGS += -finstrument-functions-exclude-file-list=lib/cmsis,lib/stm32,/lib/mimxrt,lib/alif,simd.h
 endif
-
-# Include OpenMV board config first to set the port.
-include $(OMV_BOARD_CONFIG_DIR)/omv_boardconfig.mk
 
 # Include MicroPython board config.
 #include $(MP_BOARD_CONFIG_DIR)/mpconfigboard.mk
@@ -302,10 +305,12 @@ clean:
 	$(RM) -fr $(BUILD)
 
 size:
+ifneq ($(PORT),esp32)
 ifeq ($(OMV_ENABLE_BL), 1)
 	$(SIZE) --format=SysV $(FW_DIR)/$(BOOTLOADER).elf
 endif
 	$(SIZE) --format=SysV $(FW_DIR)/$(FIRMWARE).elf
+endif
 
 .PHONY: sdk
 sdk:
@@ -316,4 +321,3 @@ submodules:
 
 debug:
 	gdbrunner $(DEBUGGER) $(OMV_$(DEBUGGER)_ARGS) $(FW_DIR)/$(FIRMWARE).elf
-
