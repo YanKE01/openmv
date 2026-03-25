@@ -66,7 +66,10 @@
 #include "modesp32.h"
 #include "modmachine.h"
 #include "modnetwork.h"
+#include "framebuffer.h"
+#include "omv_camera.h"
 #include "omv_protocol.h"
+#include "omv_test_preview.h"
 
 #if MICROPY_BLUETOOTH_NIMBLE
 #include "extmod/modbluetooth.h"
@@ -110,6 +113,9 @@ static int omv_protocol_init_esp32(void) {
         return -1;
     }
     if (omv_protocol_register_channel(&omv_stdout_channel) < 0) {
+        return -1;
+    }
+    if (omv_protocol_register_channel(&omv_stream_channel) < 0) {
         return -1;
     }
     return 0;
@@ -164,6 +170,9 @@ soft_reset:
     mp_init();
     mp_obj_list_append(mp_sys_path, MP_OBJ_NEW_QSTR(MP_QSTR__slash_lib));
     readline_init0();
+    framebuffer_init0();
+    omv_esp32_camera_init0();
+    omv_esp32_test_preview_init0();
 
     machine_pins_init();
     #if MICROPY_PY_MACHINE_I2S
@@ -173,6 +182,10 @@ soft_reset:
     if (omv_protocol_init_esp32() != 0) {
         mp_printf(&mp_plat_print, "Failed to init OpenMV protocol\r\n");
         goto soft_reset_exit;
+    }
+
+    if (omv_esp32_camera_init() != 0) {
+        mp_printf(&mp_plat_print, "Failed to init ESP32 camera\r\n");
     }
 
     pyexec_frozen_module("_boot.py", false);
@@ -242,6 +255,7 @@ soft_reset_exit:
     #endif
 
     omv_protocol_deinit();
+    omv_esp32_camera_deinit();
 
     #if MICROPY_HW_ENABLE_USBDEV
     mp_usbd_deinit();

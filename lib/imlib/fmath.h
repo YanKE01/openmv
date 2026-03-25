@@ -28,8 +28,11 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <float.h>
+#include <math.h>
+#if defined(__ARM_ARCH)
 #include CMSIS_MCU_H
 #include "arm_math.h"
+#endif
 
 float fast_atanf(float x);
 float fast_atan2f(float y, float x);

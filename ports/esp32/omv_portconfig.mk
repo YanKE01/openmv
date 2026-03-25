@@ -33,6 +33,9 @@ $(OPENMV): $(FIRMWARE)
 size:
 	$(Q)env -u BUILD bash -lc "source $(ESP_IDF_DIR)/export.sh && cd $(ESP32_PORT_DIR) && idf.py $(ESP32_IDF_ARGS) -B $(ESP32_BUILD) size"
 
+menuconfig:
+	$(Q)env -u BUILD bash -lc "source $(ESP_IDF_DIR)/export.sh && cd $(ESP32_PORT_DIR) && idf.py $(ESP32_IDF_ARGS) -B $(ESP32_BUILD) menuconfig"
+
 deploy: $(FIRMWARE)
 	$(Q)cd $(ESP32_PORT_DIR) && idf.py $(ESP32_IDF_ARGS) -B $(ESP32_BUILD) $(ESP32_IDF_DEVICE_ARGS) flash
 

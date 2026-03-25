@@ -21,7 +21,7 @@
 
 ## 当前状态
 
-更新时间：`2026-03-24 20:19:11 +0800`
+更新时间：`2026-03-25 17:54:00 +0800`
 
 ### Phase 1 进展
 
@@ -92,12 +92,46 @@
   - `boards/ESP32_GENERIC_P4/manifest.py` 已显式冻结 `flashbdev.py`
   - 首次全擦重刷后，`/flash` 文件系统可正常初始化，不再报 `readblocks` 异常
 - 已将首次生成的默认 `main.py` 模板改为不依赖 `machine.LED` 的通用版本，避免 `ImportError: can't import name LED`。
-- 当前明确不包含的内容：
-  - `omv_stream_channel`
-  - framebuffer 通道
-  - CSI 摄像头采集链路
+- 已移除为定位 IDE 握手临时加入的 `esp32` 调试日志，并重新确认 `make TARGET=ESP32_GENERIC_P4 -j4` 编译通过，可进入提交整理阶段。
+- 已完成 Phase 3.1 的最小 framebuffer / stream 骨架接入，并确认重新编译通过：
+  - `ports/esp32/main.c` 已初始化 runtime framebuffer，并注册 `omv_stream_channel`
+  - `ports/esp32/micropython.cmake` 已接入 `protocol/omv_protocol_channel_stream.c`
+  - `ports/esp32/omv_framebuffer.c` 已提供 `ESP32P4` 的最小 runtime framebuffer 实现，内存优先走 `PSRAM`，失败时回退普通 heap
+  - `boards/ESP32_GENERIC_P4/omv_boardconfig.h` 已补充 `OMV_FB_SIZE / OMV_SB_SIZE / OMV_PROTOCOL_MAX_BUFFER_SIZE` 等基础参数
+- 已在 `lib/micropython/ports/esp32/boards/sdkconfig.p4` 中加入 `CONFIG_FREERTOS_HZ=1000`，用于提高当前预览任务的调度粒度，已确认对假预览 FPS 有正向作用
+- 已完成 Phase 3.1 联板验证和性能摸底：
+  - `RGB565 160x120` 假预览链路已确认可用
+  - 将假预览目标帧率从 `10fps` 提升到 `60fps` 后，IDE 实测约 `28.6fps`
+  - 引入 `ESP32P4` 硬件 JPEG 后，低分辨率假预览实测可达约 `52.6fps`
+  - 切换到 `640x480` 假图 + 硬件 JPEG 后，当前链路在 IDE 侧可稳定工作
+  - TinyUSB 已切换为 `FreeRTOS OSAL`，消除了高流量预览时的 `OS NONE` 崩溃问题
+- 已进入 Phase 3.2 的真实摄像头接入，并完成第一轮联板验证：
+  - `ports/esp32/omv_camera.c` 已完成 `esp_video_init()` 集成
+  - 已固定使用 `/dev/video0` 作为 MIPI CSI 设备
+  - 已通过 `VIDIOC_S_FMT` 将采集格式设为 `RGB565`
+  - 当前 camera 输入配置为：`640x480 + RGB565`
+  - 已使用 `MMAP + QBUF/DQBUF + STREAMON` 拉起最小连续采集链路
+  - `ports/esp32/omv_test_preview.c` 已不再回退测试图，而是直接抓取真实 camera frame
+  - 当前真图链路为：`camera RGB565 -> 硬件 JPEG -> stream framebuffer -> OpenMV IDE`
+  - 当前 IDE 预览输出配置为：`640x480 + JPEG`
+  - 当前 `640x480` 真图预览已联板通过，IDE 实测约 `29fps`
+- 当前已具备的图像链路能力：
+  - 固件侧 `framebuffer -> stream channel` 链路已接通
+  - 已可向 IDE 提供真实摄像头预览帧
+  - 已验证 `RGB565 -> 硬件 JPEG -> USB HS -> IDE` 这条正式技术路线成立
+  - 当前图像格式分工已明确：
+    - 采集输入：`RGB565`
+    - IDE 预览输出：`JPEG`
+    - 当前联板分辨率：`640x480`
+- 当前仍待联板验证/收口的内容：
+  - 真图预览长时间稳定性
+  - 软复位后 camera stream 和 IDE 预览恢复行为
+  - `29fps` 的主要瓶颈是在 sensor/ISP、JPEG、协议还是 IDE 拉流
+- 当前仍不包含的内容：
+  - OpenMV `omv_csi` / `sensor` 抽象层接入
+  - ISP 参数和图像控制项
+  - 算法结果回写主 framebuffer 的完整链路
 - 已完成若干 `esp32` 兼容性收口，避免 `CMSIS/NVIC/framebuffer` 等 ARM 假设阻塞 `ESP32P4` 编译。
-- 当前仍保留了用于定位 IDE 握手的临时调试日志，后续需要在提交前移除。
 
 ### 已知后续事项
 
@@ -210,7 +244,6 @@ make TARGET=ESP32_GENERIC_P4 monitor ESPPORT=/dev/ttyACM0
 
 当前下一步：
 
-- 收掉 `esp32` 侧为 IDE 联机添加的临时调试日志。
 - 继续补齐第二阶段剩余的体验项：
   - 校验文件系统读写与脚本保存
   - 校验 IDE 侧重连/软复位行为
@@ -218,14 +251,62 @@ make TARGET=ESP32_GENERIC_P4 monitor ESPPORT=/dev/ttyACM0
 
 ### Phase 3: CSI 摄像头接入
 
-- 明确使用的 ESP32P4 摄像头硬件路径和实际开发板引脚。
-- 在 `ports/esp32/omv_csi.c` 中从占位实现升级为真实驱动。
-- 打通摄像头时钟、复位、电源控制、I2C 探测、像素采集链路。
-- 先支持单一已知可用的传感器组合，再扩展更多 sensor。
-- 评估 framebuffer、大块内存、PSRAM 和 DMA/带宽约束。
+- 总体策略：不单独新造一套图像传输协议，继续复用现有 `USB HS + OpenMV protocol`，图像预览走 `stream channel`。
+- 总体实现模型：
+  - `esp-video-components / esp_video / esp_cam_sensor / esp_driver_cam`
+  - `ports/esp32/omv_csi.c` 作为 OpenMV 的 `ESP32P4` 端口适配层
+  - 将采集到的图像写入 OpenMV framebuffer
+  - 由 `omv_stream_channel` 提供给 OpenMV IDE 预览
+
+#### Phase 3.1: 先打通 framebuffer 和 stream channel
+
+- 在 `esp32` 端口补齐 framebuffer 初始化，而不是直接上真摄像头：
+  - `framebuffer_init0()`
+  - `omv_stream_channel`
+- 在 `ports/esp32/main.c` 中接入 framebuffer 初始化和 `stream` 通道注册。
+- 在 `ports/esp32/micropython.cmake` 中打开 framebuffer 相关协议编译开关，并纳入所需源码。
+- 为 `boards/ESP32_GENERIC_P4/omv_boardconfig.h` 增加 framebuffer / stream buffer 的内存规划。
+- 第一版优先考虑 `ESP32P4` 适合的运行时内存分配方案，重点评估 `PSRAM/heap`，不强行照搬其他端口的 linker section 方案。
+- 当前结果：
+  - 已先后完成 `RGB565 160x120` 假预览、`640x480` 假图 + 硬件 JPEG 的链路验证
+  - 已确认 `PSRAM framebuffer + stream channel + 硬件 JPEG` 在 `ESP32P4` 上可行
+  - 本阶段目标已完成，后续不再保留测试图作为默认路径
+
+#### Phase 3.2: 接入 `esp-video-components` 作为 CSI 底层
+
+- 在 `ports/esp32/omv_csi.c` 中实现 OpenMV 的 CSI port adapter。
+- 底层复用 `esp-video-components`，不从头重写 `ESP32P4` CSI DMA/ISP 驱动。
+- 先支持单一已知可用的硬件路径和单一传感器组合，后续再扩展。
+- 第一版优先实现这些能力：
+  - 摄像头初始化/反初始化
+  - 基本分辨率和像素格式配置
+  - 抓单帧 / 连续帧
+  - 将帧写入 OpenMV main framebuffer
+- 尽量保持 OpenMV 现有 `omv_csi` 语义不变，避免为了 `ESP32P4` 单独发明新 API。
+- 当前进展：
+  - 已新增 `ports/esp32/omv_camera.c` 作为临时 camera bring-up 层
+  - 已参考 `esp-iot-solution/examples/ai/esp_dl/self_learning_classification/main/app_camera.cpp`
+  - 当前已完成固定引脚的 `SCCB/I2C + /dev/video0 + RGB565 + MMAP stream on`
+  - 已将真实 camera frame 接入当前预览任务
+  - 下一步是把这条临时 bring-up 路径收敛到 OpenMV 的 `omv_csi` / `sensor` 语义
+
+#### Phase 3.3: 图像预览和性能收口
+
+- 在真图已经能进 framebuffer 后，再评估：
+  - JPEG 优先还是 raw preview 优先
+  - 是否需要减少一次内存拷贝
+  - 双缓冲/三缓冲策略
+  - `USB HS` 带宽和 IDE 刷新率
+- 如果 `esp-video-components` 能直接提供更合适的压缩/格式输出，优先评估如何贴合 OpenMV framebuffer/stream 语义，而不是绕过它们。
+- 当前阶段结论：
+  - 正式路线优先使用 `RGB565` 作为采集/处理格式，`JPEG` 作为 IDE 预览格式
+  - 当前预览分辨率基线为：`640x480`
+  - 当前 `640x480` 真图预览基线约 `29fps`
+  - 后续再围绕 JPEG 质量、额外拷贝、buffer 策略和 ISP 输出做性能收口
 
 验收标准：
 
+- IDE 图像窗口可显示测试图或真图。
 - 能完成 sensor probe。
 - 能抓到稳定图像。
 - OpenMV IDE 能看到基础预览帧。
