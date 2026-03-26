@@ -20,9 +20,9 @@
 #include "omv_boardconfig.h"
 #include "omv_protocol.h"
 
-#define OMV_ESP32_TEST_PREVIEW_WIDTH   (640)
-#define OMV_ESP32_TEST_PREVIEW_HEIGHT  (480)
-#define OMV_ESP32_TEST_PREVIEW_FPS     (60)
+#define OMV_ESP32_TEST_PREVIEW_WIDTH   (320)
+#define OMV_ESP32_TEST_PREVIEW_HEIGHT  (240)
+#define OMV_ESP32_TEST_PREVIEW_FPS     (30)
 #define OMV_ESP32_TEST_PREVIEW_QUALITY (50)
 #define OMV_ESP32_TEST_PREVIEW_TIMEOUT_MS (200)
 #define OMV_ESP32_TEST_PREVIEW_STACK_SIZE (12288)
@@ -33,6 +33,7 @@ static uint16_t *omv_esp32_test_preview_rgb565 = NULL;
 static uint8_t *omv_esp32_test_preview_jpeg = NULL;
 static size_t omv_esp32_test_preview_jpeg_size = 0;
 static const size_t omv_esp32_stream_header_size = offsetof(framebuffer_header_t, data);
+static volatile TickType_t omv_esp32_test_preview_hold_until = 0;
 
 static bool omv_esp32_test_preview_jpeg_init(void) {
     if (omv_esp32_jpeg_handle != NULL) {
@@ -109,6 +110,11 @@ static void omv_esp32_test_preview_task(void *arg) {
     (void) arg;
 
     for (;;) {
+        if ((int32_t) (omv_esp32_test_preview_hold_until - xTaskGetTickCount()) > 0) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
 
         if (fb != NULL &&
@@ -175,4 +181,8 @@ void omv_esp32_test_preview_init0(void) {
                 NULL,
                 tskIDLE_PRIORITY + 1,
                 &omv_esp32_test_preview_task_handle);
+}
+
+void omv_esp32_test_preview_hold(uint32_t ms) {
+    omv_esp32_test_preview_hold_until = xTaskGetTickCount() + pdMS_TO_TICKS(ms);
 }

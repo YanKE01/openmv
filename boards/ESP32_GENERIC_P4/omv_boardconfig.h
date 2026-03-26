@@ -18,7 +18,7 @@
 
 #define OMV_PROTOCOL_MAX_BUFFER_SIZE (4096)
 
-#define OMV_FB_SIZE                (786432)
+#define OMV_FB_SIZE                (320 * 240 * 2)
 #define OMV_SB_SIZE                (262144)
 
 #endif // __OMV_BOARDCONFIG_H__

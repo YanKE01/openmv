@@ -21,7 +21,7 @@
 
 ## 当前状态
 
-更新时间：`2026-03-25 17:54:00 +0800`
+更新时间：`2026-03-26 22:40:00 +0800`
 
 ### Phase 1 进展
 
@@ -109,29 +109,156 @@
   - `ports/esp32/omv_camera.c` 已完成 `esp_video_init()` 集成
   - 已固定使用 `/dev/video0` 作为 MIPI CSI 设备
   - 已通过 `VIDIOC_S_FMT` 将采集格式设为 `RGB565`
-  - 当前 camera 输入配置为：`640x480 + RGB565`
+  - 当前 camera 底层输入配置为：`640x480 + RGB565`
+  - 已接入 `PPA`，当前主图像分辨率固定为：`320x240 + RGB565`
   - 已使用 `MMAP + QBUF/DQBUF + STREAMON` 拉起最小连续采集链路
   - `ports/esp32/omv_test_preview.c` 已不再回退测试图，而是直接抓取真实 camera frame
-  - 当前真图链路为：`camera RGB565 -> 硬件 JPEG -> stream framebuffer -> OpenMV IDE`
-  - 当前 IDE 预览输出配置为：`640x480 + JPEG`
-  - 当前 `640x480` 真图预览已联板通过，IDE 实测约 `29fps`
+  - 当前真图链路为：`camera 640x480 RGB565 -> PPA 缩放到 320x240 RGB565 -> 硬件 JPEG -> stream framebuffer -> OpenMV IDE`
+  - 当前 IDE 预览输出配置为：`320x240 + JPEG`
+  - 已联板验证 `sensor.snapshot()` 当前输出为：`320x240`，`size=153600`
 - 当前已具备的图像链路能力：
   - 固件侧 `framebuffer -> stream channel` 链路已接通
   - 已可向 IDE 提供真实摄像头预览帧
-  - 已验证 `RGB565 -> 硬件 JPEG -> USB HS -> IDE` 这条正式技术路线成立
+  - 已验证 `PPA 缩放 RGB565 -> 硬件 JPEG -> USB HS -> IDE` 这条正式技术路线成立
   - 当前图像格式分工已明确：
-    - 采集输入：`RGB565`
+    - 底层采集输入：`640x480 RGB565`
+    - 主图像分辨率：`320x240 RGB565`
     - IDE 预览输出：`JPEG`
-    - 当前联板分辨率：`640x480`
+    - 当前联板分辨率：`320x240`
 - 当前仍待联板验证/收口的内容：
   - 真图预览长时间稳定性
   - 软复位后 camera stream 和 IDE 预览恢复行为
   - `29fps` 的主要瓶颈是在 sensor/ISP、JPEG、协议还是 IDE 拉流
+- 已确认一个重要联调结论：
+  - OpenMV IDE 的预览稳定性与主机侧拉流策略强相关
+  - 在 IDE 中启用 `动态帧获取 + 组合轮询` 后，当前真实摄像头预览可稳定在约 `30fps`
+  - 因此当前阶段的推荐联调设置为：
+    - `动态帧获取 = 开`
+    - `组合轮询 = 开`
+  - 之前出现的周期性 `30fps -> 11fps` 或短时 `0fps`，更偏向 IDE 主机侧消费策略不匹配，而不是板端 camera/JPEG 生产链停止
 - 当前仍不包含的内容：
   - OpenMV `omv_csi` / `sensor` 抽象层接入
   - ISP 参数和图像控制项
   - 算法结果回写主 framebuffer 的完整链路
 - 已完成若干 `esp32` 兼容性收口，避免 `CMSIS/NVIC/framebuffer` 等 ARM 假设阻塞 `ESP32P4` 编译。
+- 已完成 `sensor` 最小 Python 闭环，当前固定仅支持：
+  - `sensor.RGB565`
+  - `sensor.QVGA`
+  - 当前 `SC2336`
+- 当前已联板验证可用的 `sensor` 接口：
+  - `sensor.reset()`
+  - `sensor.set_pixformat(sensor.RGB565)`
+  - `sensor.set_framesize(sensor.QVGA)`
+  - `sensor.snapshot()`
+  - `sensor.get_id()`，当前返回 `0xCB3A`
+  - `sensor.skip_frames()`
+  - `sensor.set_hmirror()/get_hmirror()`
+  - `sensor.set_vflip()/get_vflip()`
+- 已开始接入 `imlib` 兼容层与最小图像算法子集：
+  - 已新增 `lib/imlib/arm_compat.h`，为 `ESP32P4/RISC-V` 提供最小 ARM/CMSIS intrinsic 兼容
+  - 已在 `lib/imlib/imlib.h`、`lib/imlib/simd.h`、`modules/py_image.c` 中接入非 ARM 兼容入口
+  - 已新增 `ports/esp32/omv_imlib_draw_min.c`，当前接入的最小 `imlib` 绘图子集包括：
+    - `imlib_get_pixel`
+    - `imlib_set_pixel`
+    - `imlib_draw_line`
+    - `imlib_draw_rectangle`
+    - `imlib_draw_circle`
+  - `ports/esp32/py_image_lite.c` 当前已迁移到上述最小 `imlib` draw 子集
+- 当前已联板验证可用的轻量图像接口：
+  - `img.get_pixel()`
+  - `img.set_pixel()`
+  - `img.draw_line()`
+  - `img.draw_rectangle()`
+  - `img.draw_cross()`
+  - `img.draw_circle()`
+  - `img.flush()`
+- 已新增一个最小可用的二值化接口：
+  - `img.binary((lo, hi), invert=False)`
+  - 当前实现是基于 `RGB565 -> Y` 亮度阈值的轻量版本
+  - 当前仍不是 OpenMV 官方 `imlib_binary()`，后续仍需继续向正式 `imlib` 实现收敛
+- 已新增第一批最小可用的 image filter 接口：
+  - `img.mean(ksize, threshold=False, offset=0, invert=False)`
+  - `img.median(ksize, percentile=0.5, threshold=False, offset=0, invert=False)`
+  - `img.gaussian(ksize, unsharp=False, threshold=False, offset=0, invert=False)`
+  - 当前实现位于：
+    - `ports/esp32/omv_imlib_filter_min.c`
+    - `ports/esp32/py_image_lite.c`
+  - 当前边界：
+    - 仅支持 `RGB565`
+    - 当前不支持 `mask`
+    - 仍是最小收敛实现，不是完整官方 `filter.c/imlib_morph` 直连
+  - 当前联板性能参考：
+    - 纯预览约 `30fps`
+    - `img.mean(1)` 当前约 `4.5fps`
+    - `脚本抓图 + draw + flush` 当前约 `10fps`
+- 已新增一个最小可用的色块查找接口：
+  - `img.find_blobs(...)`
+  - 当前支持亮度阈值 `(lo, hi)` 与 LAB 阈值 `(l_lo, l_hi, a_lo, a_hi, b_lo, b_hi)`
+  - 当前支持：
+    - `roi`
+    - `invert`
+    - `pixels_threshold`
+    - `area_threshold`
+  - 当前暂不支持：
+    - `merge=True`
+    - `margin != 0`
+    - `x_stride/y_stride != 1`
+  - 当前 blob 返回对象先提供最小接口：
+    - `rect()`
+    - `pixels()`
+    - `cx()`
+    - `cy()`
+    - `code()`
+    - `count()`
+  - 当前实现位于：
+    - `ports/esp32/omv_imlib_blob_min.c`
+    - `ports/esp32/py_image_lite.c`
+  - 方向上仍属于“向 OpenMV 官方 imlib/blob 算法收敛”的最小过渡实现，不是整包官方 `imlib_find_blobs()` 直连
+- 已新增一个最小可用的矩形检测接口：
+  - `img.find_rects(...)`
+  - 当前为 `QVGA RGB565` 下的轻量实现
+  - 当前返回对象提供：
+    - `rect()`
+    - `corners()`
+    - `magnitude()`
+  - 当前实现位于：
+    - `ports/esp32/omv_imlib_shape_min.c`
+    - `ports/esp32/py_image_lite.c`
+- 已新增一个最小可用的圆检测接口：
+  - `img.find_circles(...)`
+  - 当前支持最基本参数：
+    - `roi`
+    - `x_stride`
+    - `y_stride`
+    - `threshold`
+    - `x_margin`
+    - `y_margin`
+    - `r_margin`
+    - `r_min`
+    - `r_max`
+    - `r_step`
+  - 当前返回对象提供：
+    - `circle()`
+    - `magnitude()`
+  - 当前实现同样位于：
+    - `ports/esp32/omv_imlib_shape_min.c`
+    - `ports/esp32/py_image_lite.c`
+- 已新增一个最小可用的边缘检测接口：
+  - `img.find_edges(image.EDGE_SIMPLE, threshold=(low, high), roi=...)`
+  - `img.find_edges(image.EDGE_CANNY, threshold=(low, high), roi=...)`
+  - 当前通过最小 `image` 模块导出：
+    - `image.EDGE_SIMPLE`
+    - `image.EDGE_CANNY`
+  - 当前实现位于：
+    - `ports/esp32/omv_imlib_edge_min.c`
+    - `ports/esp32/py_image_lite.c`
+  - 当前仍是最小收敛实现，不是官方完整 `imlib_edge_simple/imlib_edge_canny` 直连
+- 当前 `find_blobs()` 联板验证可用阈值样例：
+  - `(19, 50, 32, 65, -1, 64)`
+- 扫码识别当前状态：
+  - `find_barcodes()` / `find_qrcodes()` 当前未并入主线
+  - 原因是 `ESP32P4` 侧 `zbar/qrcode` 依赖收敛与识别效果暂未达到可接受状态
+  - 后续将作为独立阶段再处理，不影响当前 `QVGA + sensor + 基础算法` 主线推进
 
 ### 已知后续事项
 
@@ -257,6 +384,11 @@ make TARGET=ESP32_GENERIC_P4 monitor ESPPORT=/dev/ttyACM0
   - `ports/esp32/omv_csi.c` 作为 OpenMV 的 `ESP32P4` 端口适配层
   - 将采集到的图像写入 OpenMV framebuffer
   - 由 `omv_stream_channel` 提供给 OpenMV IDE 预览
+- 当前图像链路建议：
+  - 采集输入：`RGB565`
+  - IDE 预览输出：`JPEG`
+  - 当前默认联调分辨率：`640x480`
+  - 在 IDE 中推荐开启 `动态帧获取 + 组合轮询`
 
 #### Phase 3.1: 先打通 framebuffer 和 stream channel
 
@@ -288,7 +420,8 @@ make TARGET=ESP32_GENERIC_P4 monitor ESPPORT=/dev/ttyACM0
   - 已参考 `esp-iot-solution/examples/ai/esp_dl/self_learning_classification/main/app_camera.cpp`
   - 当前已完成固定引脚的 `SCCB/I2C + /dev/video0 + RGB565 + MMAP stream on`
   - 已将真实 camera frame 接入当前预览任务
-  - 下一步是把这条临时 bring-up 路径收敛到 OpenMV 的 `omv_csi` / `sensor` 语义
+  - 已完成 `sensor` 最小脚本闭环，当前已可用 `snapshot/get_id/skip_frames/get_hmirror/get_vflip`
+  - 下一步是继续补齐更正式的 OpenMV `image/imlib` 语义，而不是扩展更多分辨率和格式
 
 #### Phase 3.3: 图像预览和性能收口
 
@@ -302,7 +435,34 @@ make TARGET=ESP32_GENERIC_P4 monitor ESPPORT=/dev/ttyACM0
   - 正式路线优先使用 `RGB565` 作为采集/处理格式，`JPEG` 作为 IDE 预览格式
   - 当前预览分辨率基线为：`640x480`
   - 当前 `640x480` 真图预览基线约 `29fps`
+  - 在 OpenMV IDE 中启用 `动态帧获取 + 组合轮询` 后，当前 `640x480` 真实摄像头预览可稳定在约 `30fps`
+  - 当前“纯预览”约 `30fps`
+  - 当前“脚本抓图 + draw + flush”约 `10fps`
+  - 这表明当前图像链路已具备脚本修改图像并回显到 IDE 的基本能力
   - 后续再围绕 JPEG 质量、额外拷贝、buffer 策略和 ISP 输出做性能收口
+  - 当前阶段优先级已调整为：先继续补 `imlib`/算法能力，再回头做更细的预览性能优化
+
+#### Phase 3.4: `imlib` 和基础算法收敛
+
+- 先不一次性导入整套 OpenMV `py_image.c/imlib.c`，而是分层收敛：
+  - 先补 `ESP32P4/RISC-V` 的 ARM/CMSIS 兼容层
+  - 再逐步迁移最小 `imlib` 绘图与基础算法子集
+- 当前已完成：
+  - 最小 `imlib draw` 子集接入
+  - 最小亮度阈值 `binary()` 接口接入
+  - 最小 `find_blobs/find_rects/find_circles` 接口接入
+  - 最小 `find_edges(image.EDGE_SIMPLE / image.EDGE_CANNY)` 接口接入
+  - 最小 `image` 模块常量接入：
+    - `image.EDGE_SIMPLE`
+    - `image.EDGE_CANNY`
+- 当前边界：
+  - `binary()` 还不是官方 `imlib_binary()`
+  - `find_edges()` 还不是官方完整 `edge.c` 依赖链直连
+  - 仍使用当前轻量 `Image` 包装层，而非完整 OpenMV `py_image`
+- 下一步建议：
+  - 继续补 `imlib` 依赖最小的一批基础算法
+  - 逐步减少 `py_image_lite` 的特化逻辑
+  - 最终向 OpenMV 正式 `image/imlib` 语义收敛
 
 验收标准：
 

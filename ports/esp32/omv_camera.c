@@ -12,15 +12,26 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include "driver/ppa.h"
+#include "esp_err.h"
+#include "esp_heap_caps.h"
+#include "esp_private/esp_cache_private.h"
 #include "esp_video_device.h"
 #include "esp_video_init.h"
 #include "linux/videodev2.h"
 #include "py/mphal.h"
 
+#include "common/mutex.h"
 #include "omv_camera.h"
 
-#define OMV_ESP32_CAMERA_WIDTH                  (640)
-#define OMV_ESP32_CAMERA_HEIGHT                 (480)
+#define OMV_ESP32_CAMERA_INPUT_WIDTH            (960)
+#define OMV_ESP32_CAMERA_INPUT_HEIGHT           (540)
+#define OMV_ESP32_CAMERA_ACTIVE_INPUT_WIDTH     (640)
+#define OMV_ESP32_CAMERA_ACTIVE_INPUT_HEIGHT    (480)
+#define OMV_ESP32_CAMERA_ACTIVE_INPUT_OFFSET_X  (160)
+#define OMV_ESP32_CAMERA_ACTIVE_INPUT_OFFSET_Y  (30)
+#define OMV_ESP32_CAMERA_OUTPUT_WIDTH           (320)
+#define OMV_ESP32_CAMERA_OUTPUT_HEIGHT          (240)
 #define OMV_ESP32_CAMERA_BUFFER_COUNT           (2)
 #define OMV_ESP32_CAMERA_SCCB_I2C_PORT          (0)
 #define OMV_ESP32_CAMERA_SCCB_I2C_SCL_PIN       (8)
@@ -38,14 +49,30 @@ typedef struct {
     bool initialized;
     bool video_inited;
     bool streaming;
+    bool hmirror;
+    bool vflip;
     int fd;
+    uint32_t input_width;
+    uint32_t input_height;
+    uint32_t active_input_width;
+    uint32_t active_input_height;
+    uint32_t active_input_offset_x;
+    uint32_t active_input_offset_y;
     uint32_t width;
     uint32_t height;
     uint32_t pixfmt;
+    size_t ppa_out_size;
+    ppa_client_handle_t ppa_handle;
+    uint8_t *ppa_out_buf;
+    mutex_t lock;
     omv_esp32_camera_buffer_t buffers[OMV_ESP32_CAMERA_BUFFER_COUNT];
 } omv_esp32_camera_t;
 
 static omv_esp32_camera_t camera_ctx;
+
+static size_t omv_esp32_camera_align_up(size_t value, size_t alignment) {
+    return ((value + alignment - 1) / alignment) * alignment;
+}
 
 static void omv_esp32_camera_release_buffers(void) {
     for (size_t i = 0; i < OMV_ESP32_CAMERA_BUFFER_COUNT; i++) {
@@ -60,7 +87,7 @@ static void omv_esp32_camera_release_buffers(void) {
 static int omv_esp32_camera_open_device(void) {
     struct v4l2_capability capability;
 
-    camera_ctx.fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY);
+    camera_ctx.fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDWR);
     if (camera_ctx.fd < 0) {
         mp_printf(&mp_plat_print, "ESP32 camera open failed\r\n");
         return -1;
@@ -81,8 +108,8 @@ static int omv_esp32_camera_set_format(void) {
 
     memset(&format, 0, sizeof(format));
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    format.fmt.pix.width = OMV_ESP32_CAMERA_WIDTH;
-    format.fmt.pix.height = OMV_ESP32_CAMERA_HEIGHT;
+    format.fmt.pix.width = OMV_ESP32_CAMERA_INPUT_WIDTH;
+    format.fmt.pix.height = OMV_ESP32_CAMERA_INPUT_HEIGHT;
     format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565;
 
     if (ioctl(camera_ctx.fd, VIDIOC_S_FMT, &format) != 0) {
@@ -90,15 +117,92 @@ static int omv_esp32_camera_set_format(void) {
         return -1;
     }
 
-    camera_ctx.width = format.fmt.pix.width;
-    camera_ctx.height = format.fmt.pix.height;
+    camera_ctx.input_width = format.fmt.pix.width;
+    camera_ctx.input_height = format.fmt.pix.height;
     camera_ctx.pixfmt = format.fmt.pix.pixelformat;
 
     mp_printf(&mp_plat_print,
               "ESP32 camera fmt %lux%lu fourcc=0x%08lx\r\n",
-              (unsigned long) camera_ctx.width,
-              (unsigned long) camera_ctx.height,
+              (unsigned long) camera_ctx.input_width,
+              (unsigned long) camera_ctx.input_height,
               (unsigned long) camera_ctx.pixfmt);
+    return 0;
+}
+
+static void omv_esp32_camera_release_ppa(void) {
+    if (camera_ctx.ppa_handle != NULL) {
+        ppa_unregister_client(camera_ctx.ppa_handle);
+        camera_ctx.ppa_handle = NULL;
+    }
+    if (camera_ctx.ppa_out_buf != NULL) {
+        heap_caps_free(camera_ctx.ppa_out_buf);
+        camera_ctx.ppa_out_buf = NULL;
+    }
+    camera_ctx.ppa_out_size = 0;
+}
+
+static int omv_esp32_camera_init_ppa(void) {
+    esp_err_t ret;
+    size_t cache_align = 0;
+    size_t out_size = OMV_ESP32_CAMERA_OUTPUT_WIDTH * OMV_ESP32_CAMERA_OUTPUT_HEIGHT * sizeof(uint16_t);
+    ppa_client_config_t ppa_cfg = {
+        .oper_type = PPA_OPERATION_SRM,
+    };
+
+    ret = esp_cache_get_alignment(MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA, &cache_align);
+    if ((ret != ESP_OK) || (cache_align == 0)) {
+        mp_printf(&mp_plat_print, "ESP32 camera get cache align failed\r\n");
+        return -1;
+    }
+
+    ret = ppa_register_client(&ppa_cfg, &camera_ctx.ppa_handle);
+    if (ret != ESP_OK) {
+        mp_printf(&mp_plat_print, "ESP32 camera PPA init failed: %s\r\n", esp_err_to_name(ret));
+        camera_ctx.ppa_handle = NULL;
+        return -1;
+    }
+
+    camera_ctx.ppa_out_size = omv_esp32_camera_align_up(out_size, cache_align);
+    camera_ctx.ppa_out_buf = heap_caps_aligned_calloc(
+        cache_align, 1, camera_ctx.ppa_out_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+    if (camera_ctx.ppa_out_buf == NULL) {
+        camera_ctx.ppa_out_buf = heap_caps_aligned_calloc(
+            cache_align, 1, camera_ctx.ppa_out_size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (camera_ctx.ppa_out_buf == NULL) {
+        mp_printf(&mp_plat_print, "ESP32 camera PPA buffer alloc failed\r\n");
+        omv_esp32_camera_release_ppa();
+        return -1;
+    }
+
+    camera_ctx.width = OMV_ESP32_CAMERA_OUTPUT_WIDTH;
+    camera_ctx.height = OMV_ESP32_CAMERA_OUTPUT_HEIGHT;
+    camera_ctx.active_input_width = (camera_ctx.input_width < OMV_ESP32_CAMERA_ACTIVE_INPUT_WIDTH)
+                                    ? camera_ctx.input_width
+                                    : OMV_ESP32_CAMERA_ACTIVE_INPUT_WIDTH;
+    camera_ctx.active_input_height = (camera_ctx.input_height < OMV_ESP32_CAMERA_ACTIVE_INPUT_HEIGHT)
+                                     ? camera_ctx.input_height
+                                     : OMV_ESP32_CAMERA_ACTIVE_INPUT_HEIGHT;
+    camera_ctx.active_input_offset_x = OMV_ESP32_CAMERA_ACTIVE_INPUT_OFFSET_X;
+    camera_ctx.active_input_offset_y = OMV_ESP32_CAMERA_ACTIVE_INPUT_OFFSET_Y;
+
+    if ((camera_ctx.active_input_offset_x + camera_ctx.active_input_width) > camera_ctx.input_width) {
+        camera_ctx.active_input_offset_x = 0;
+    }
+    if ((camera_ctx.active_input_offset_y + camera_ctx.active_input_height) > camera_ctx.input_height) {
+        camera_ctx.active_input_offset_y = 0;
+    }
+
+    mp_printf(&mp_plat_print,
+              "ESP32 camera scale %lux%lu crop=%lu,%lu %lux%lu -> %lux%lu\r\n",
+              (unsigned long) camera_ctx.input_width,
+              (unsigned long) camera_ctx.input_height,
+              (unsigned long) camera_ctx.active_input_offset_x,
+              (unsigned long) camera_ctx.active_input_offset_y,
+              (unsigned long) camera_ctx.active_input_width,
+              (unsigned long) camera_ctx.active_input_height,
+              (unsigned long) camera_ctx.width,
+              (unsigned long) camera_ctx.height);
     return 0;
 }
 
@@ -163,6 +267,30 @@ static int omv_esp32_camera_start_stream(void) {
 void omv_esp32_camera_init0(void) {
     memset(&camera_ctx, 0, sizeof(camera_ctx));
     camera_ctx.fd = -1;
+    mutex_init0(&camera_ctx.lock);
+}
+
+static bool omv_esp32_camera_set_control(uint32_t id, int value) {
+    struct v4l2_ext_controls controls;
+    struct v4l2_ext_control control[1];
+    bool ok = false;
+
+    if (camera_ctx.fd < 0) {
+        return false;
+    }
+
+    memset(&controls, 0, sizeof(controls));
+    memset(control, 0, sizeof(control));
+    controls.ctrl_class = V4L2_CTRL_CLASS_USER;
+    controls.count = 1;
+    controls.controls = control;
+    control[0].id = id;
+    control[0].value = value;
+
+    mutex_lock(&camera_ctx.lock, MUTEX_TID_OMV);
+    ok = (ioctl(camera_ctx.fd, VIDIOC_S_EXT_CTRLS, &controls) == 0);
+    mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+    return ok;
 }
 
 int omv_esp32_camera_init(void) {
@@ -200,6 +328,7 @@ int omv_esp32_camera_init(void) {
 
     if (omv_esp32_camera_open_device() != 0 ||
         omv_esp32_camera_set_format() != 0 ||
+        omv_esp32_camera_init_ppa() != 0 ||
         omv_esp32_camera_init_buffers() != 0 ||
         omv_esp32_camera_start_stream() != 0) {
         omv_esp32_camera_deinit();
@@ -219,6 +348,7 @@ void omv_esp32_camera_deinit(void) {
     }
 
     omv_esp32_camera_release_buffers();
+    omv_esp32_camera_release_ppa();
 
     if (camera_ctx.fd >= 0) {
         close(camera_ctx.fd);
@@ -231,6 +361,14 @@ void omv_esp32_camera_deinit(void) {
 
     camera_ctx.initialized = false;
     camera_ctx.video_inited = false;
+    camera_ctx.hmirror = false;
+    camera_ctx.vflip = false;
+    camera_ctx.input_width = 0;
+    camera_ctx.input_height = 0;
+    camera_ctx.active_input_width = 0;
+    camera_ctx.active_input_height = 0;
+    camera_ctx.active_input_offset_x = 0;
+    camera_ctx.active_input_offset_y = 0;
     camera_ctx.width = 0;
     camera_ctx.height = 0;
     camera_ctx.pixfmt = 0;
@@ -238,6 +376,8 @@ void omv_esp32_camera_deinit(void) {
 
 bool omv_esp32_camera_is_ready(void) {
     return camera_ctx.initialized && camera_ctx.streaming &&
+           camera_ctx.ppa_handle != NULL &&
+           camera_ctx.ppa_out_buf != NULL &&
            camera_ctx.pixfmt == V4L2_PIX_FMT_RGB565 &&
            camera_ctx.width != 0 && camera_ctx.height != 0;
 }
@@ -250,10 +390,40 @@ uint32_t omv_esp32_camera_get_height(void) {
     return camera_ctx.height;
 }
 
+uint32_t omv_esp32_camera_get_id(void) {
+    return OMV_ESP32_CAMERA_SENSOR_ID;
+}
+
+bool omv_esp32_camera_set_hmirror(bool enable) {
+    if (!omv_esp32_camera_set_control(V4L2_CID_HFLIP, enable ? 1 : 0)) {
+        return false;
+    }
+
+    camera_ctx.hmirror = enable;
+    return true;
+}
+
+bool omv_esp32_camera_get_hmirror(void) {
+    return camera_ctx.hmirror;
+}
+
+bool omv_esp32_camera_set_vflip(bool enable) {
+    if (!omv_esp32_camera_set_control(V4L2_CID_VFLIP, enable ? 1 : 0)) {
+        return false;
+    }
+
+    camera_ctx.vflip = enable;
+    return true;
+}
+
+bool omv_esp32_camera_get_vflip(void) {
+    return camera_ctx.vflip;
+}
+
 bool omv_esp32_camera_capture_rgb565(uint16_t *pixels, size_t pixel_count) {
     struct v4l2_buffer buf;
     size_t expected_size;
-    size_t copy_size;
+    bool ok = false;
 
     if (!omv_esp32_camera_is_ready() || pixels == NULL) {
         return false;
@@ -268,8 +438,9 @@ bool omv_esp32_camera_capture_rgb565(uint16_t *pixels, size_t pixel_count) {
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
 
+    mutex_lock(&camera_ctx.lock, MUTEX_TID_OMV);
     if (ioctl(camera_ctx.fd, VIDIOC_DQBUF, &buf) != 0) {
-        return false;
+        goto exit;
     }
 
     if (buf.index >= OMV_ESP32_CAMERA_BUFFER_COUNT ||
@@ -278,22 +449,50 @@ bool omv_esp32_camera_capture_rgb565(uint16_t *pixels, size_t pixel_count) {
         if (buf.index < OMV_ESP32_CAMERA_BUFFER_COUNT) {
             ioctl(camera_ctx.fd, VIDIOC_QBUF, &buf);
         }
-        return false;
+        goto exit;
     }
 
-    copy_size = buf.bytesused;
-    if (copy_size > expected_size) {
-        copy_size = expected_size;
-    }
-    memcpy(pixels, camera_ctx.buffers[buf.index].ptr, copy_size);
+    ppa_srm_oper_config_t ppa_cfg = {
+        .in.buffer = camera_ctx.buffers[buf.index].ptr,
+        .in.pic_w = camera_ctx.input_width,
+        .in.pic_h = camera_ctx.input_height,
+        .in.block_w = camera_ctx.active_input_width,
+        .in.block_h = camera_ctx.active_input_height,
+        .in.block_offset_x = camera_ctx.active_input_offset_x,
+        .in.block_offset_y = camera_ctx.active_input_offset_y,
+        .in.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        .out.buffer = camera_ctx.ppa_out_buf,
+        .out.buffer_size = camera_ctx.ppa_out_size,
+        .out.pic_w = camera_ctx.width,
+        .out.pic_h = camera_ctx.height,
+        .out.block_offset_x = 0,
+        .out.block_offset_y = 0,
+        .out.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
+        .scale_x = (float) camera_ctx.width / (float) camera_ctx.active_input_width,
+        .scale_y = (float) camera_ctx.height / (float) camera_ctx.active_input_height,
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
 
-    if (copy_size < expected_size) {
-        memset(((uint8_t *) pixels) + copy_size, 0, expected_size - copy_size);
+    esp_cache_msync(camera_ctx.ppa_out_buf, camera_ctx.ppa_out_size,
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+
+    if (ppa_do_scale_rotate_mirror(camera_ctx.ppa_handle, &ppa_cfg) != ESP_OK) {
+        ioctl(camera_ctx.fd, VIDIOC_QBUF, &buf);
+        goto exit;
     }
+
+    esp_cache_msync(camera_ctx.ppa_out_buf, camera_ctx.ppa_out_size,
+                    ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+    memcpy(pixels, camera_ctx.ppa_out_buf, expected_size);
 
     if (ioctl(camera_ctx.fd, VIDIOC_QBUF, &buf) != 0) {
-        return false;
+        goto exit;
     }
 
-    return true;
+    ok = true;
+
+exit:
+    mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+    return ok;
 }

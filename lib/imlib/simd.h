@@ -23,8 +23,7 @@
  *
  * SIMD abstraction.
  */
-#include <arm_math.h>
-#include <cmsis_extension.h>
+#include "arm_compat.h"
 
 #if (__ARM_ARCH >= 8)
 #define VECTOR_SIZE_BYTES   16

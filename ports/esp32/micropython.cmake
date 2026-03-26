@@ -4,7 +4,17 @@ set(MICROPY_SOURCE_PORT_MAIN "../../../../ports/esp32/main.c")
 
 add_library(usermod_openmv_esp32 INTERFACE)
 target_sources(usermod_openmv_esp32 INTERFACE
+    ${OMV_TOP_DIR}/common/umm_malloc.c
     ${OMV_TOP_DIR}/common/mutex.c
+    ${OMV_TOP_DIR}/lib/imlib/lab_tab.c
+    ${OMV_TOP_DIR}/lib/imlib/collections.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_blob_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_draw_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_edge_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_filter_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_gray_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_geom_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_shape_min.c
     ${OMV_TOP_DIR}/modules/py_clock.c
     ${OMV_TOP_DIR}/protocol/omv_protocol.c
     ${OMV_TOP_DIR}/protocol/omv_protocol_channel_stdio.c
@@ -14,6 +24,8 @@ target_sources(usermod_openmv_esp32 INTERFACE
     ${OMV_TOP_DIR}/ports/esp32/omv_camera.c
     ${OMV_TOP_DIR}/ports/esp32/omv_framebuffer.c
     ${OMV_TOP_DIR}/ports/esp32/omv_test_preview.c
+    ${OMV_TOP_DIR}/ports/esp32/py_image_lite.c
+    ${OMV_TOP_DIR}/ports/esp32/py_sensor.c
 )
 target_include_directories(usermod_openmv_esp32 INTERFACE
     ${OMV_TOP_DIR}

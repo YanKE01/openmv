@@ -26,7 +26,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
-#include <arm_math.h>
+#include "arm_compat.h"
 #include "py/nlr.h"
 #include "py/obj.h"
 #include "py/objlist.h"

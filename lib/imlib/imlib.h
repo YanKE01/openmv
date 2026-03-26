@@ -36,6 +36,8 @@
 #if defined(__ARM_ARCH)
 #include <arm_math.h>
 #include <cmsis_extension.h>
+#else
+#include "arm_compat.h"
 #endif
 #include "fb_alloc.h"
 #include "file_utils.h"
