@@ -30,11 +30,25 @@
 #include <stddef.h>
 
 #include "py/mphal.h"
-#include "omv_csi.h"
+#include "py/runtime.h"
+#include "extmod/modmachine.h"
+#include "omv_common.h"
 #include "omv_crc.h"
 #include "omv_protocol.h"
 #include "omv_protocol_hw_caps.h"
 #include "boot/include/header.h"
+
+#if defined(ESP_PLATFORM)
+#include "esp_system.h"
+#endif
+
+#if MICROPY_PY_CSI
+#include "omv_csi.h"
+#endif
+
+#if defined(OMV_PROTOCOL_HAS_FRAMEBUFFER) && OMV_PROTOCOL_HAS_FRAMEBUFFER
+#include "framebuffer.h"
+#endif
 
 #ifndef OMV_PROTOCOL_HW_CAPS
 #define OMV_PROTOCOL_HW_CAPS    (0)
@@ -679,6 +693,8 @@ void omv_protocol_process(const omv_protocol_packet_t *packet) {
         case OMV_PROTOCOL_OPCODE_SYS_RESET: {
             #if defined(OMV_BOARD_RESET)
             OMV_BOARD_RESET();
+            #elif defined(__XTENSA__) || defined(__riscv)
+            esp_restart();
             #else
             NVIC_SystemReset();
             #endif
@@ -686,7 +702,9 @@ void omv_protocol_process(const omv_protocol_packet_t *packet) {
         }
 
         case OMV_PROTOCOL_OPCODE_SYS_BOOT: {
-            #if defined(MICROPY_BOARD_ENTER_BOOTLOADER)
+            #if defined(__XTENSA__) || defined(__riscv)
+            machine_bootloader(0, NULL);
+            #elif defined(MICROPY_BOARD_ENTER_BOOTLOADER)
             MICROPY_BOARD_ENTER_BOOTLOADER(0, 0);
             #else
             NVIC_SystemReset();
@@ -698,7 +716,11 @@ void omv_protocol_process(const omv_protocol_packet_t *packet) {
             omv_protocol_sys_info_t sysinfo = { 0 };
 
             // Hardware identification
+            #if defined(__ARM_ARCH) && defined(SCB)
             sysinfo.cpu_id = SCB->CPUID;
+            #else
+            sysinfo.cpu_id = 0;
+            #endif
 
             // USB VID/PID
             #if defined(OMV_USB_VID) && defined(OMV_USB_PID)
@@ -706,11 +728,13 @@ void omv_protocol_process(const omv_protocol_packet_t *packet) {
             #endif
 
             // Device ID from board UID
-            #if (OMV_BOARD_UID_SIZE > 2)
+            #if defined(OMV_BOARD_UID_ADDR) && defined(OMV_BOARD_UID_OFFSET) && (OMV_BOARD_UID_SIZE > 2)
             sysinfo.dev_id[0] = *((uint32_t *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 2));
             #endif
+            #if defined(OMV_BOARD_UID_ADDR) && defined(OMV_BOARD_UID_OFFSET)
             sysinfo.dev_id[1] = *((uint32_t *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 1));
             sysinfo.dev_id[2] = *((uint32_t *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 0));
+            #endif
 
             // Camera sensor chip ID
             #if MICROPY_PY_CSI
@@ -732,8 +756,13 @@ void omv_protocol_process(const omv_protocol_packet_t *packet) {
             // Memory information
             sysinfo.flash_size_kb = 0;
             sysinfo.ram_size_kb = 0;
+            #if defined(OMV_PROTOCOL_HAS_FRAMEBUFFER) && OMV_PROTOCOL_HAS_FRAMEBUFFER
             sysinfo.frame_buffer_size_kb = framebuffer_get(FB_MAINFB_ID)->raw_size / 1024;
             sysinfo.stream_buffer_size_kb = framebuffer_get(FB_STREAM_ID)->raw_size / 1024;
+            #else
+            sysinfo.frame_buffer_size_kb = 0;
+            sysinfo.stream_buffer_size_kb = 0;
+            #endif
 
             omv_protocol_send_packet(OMV_PROTOCOL_OPCODE_SYS_INFO, packet->channel, sizeof(sysinfo), &sysinfo, 0);
             break;

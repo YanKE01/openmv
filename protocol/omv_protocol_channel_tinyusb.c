@@ -30,7 +30,6 @@
 #include "py/runtime.h"
 
 #include "omv_common.h"
-#include "cmsis_gcc.h"
 #include "omv_protocol.h"
 #include "omv_boardconfig.h"
 #include "tusb.h"
