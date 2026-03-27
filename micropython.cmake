@@ -1,0 +1,6 @@
+if(DEFINED MICROPY_PORT_DIR)
+    get_filename_component(OMV_PORT_NAME "${MICROPY_PORT_DIR}" NAME)
+    if(OMV_PORT_NAME STREQUAL "esp32")
+        include(${CMAKE_CURRENT_LIST_DIR}/ports/esp32/micropython.cmake)
+    endif()
+endif()
