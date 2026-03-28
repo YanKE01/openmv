@@ -351,6 +351,95 @@ target_link_libraries(usermod INTERFACE usermod_openmv_esp32)
 
 `usermod` 是在 `py/usermod.cmake:2` 预定义的 INTERFACE 库，最终在 `esp32_common.cmake:288` 被链接进 `micropython` 目标。所有通过 `target_link_libraries(usermod INTERFACE ...)` 挂进来的模块都会成为固件的一部分。
 
+**`target_compile_definitions` 是怎么影响 MicroPython / OpenMV 代码的**
+
+```cmake
+target_compile_definitions(usermod_openmv_esp32 INTERFACE
+    MICROPY_OPENMV=1
+    OMV_USB_STACK_TINYUSB=1
+    OMV_USB_VID=0x37C5
+    OMV_USB_PID=0x1204
+    OMV_PROTOCOL_DEFAULT_CHANNELS=0
+    OMV_PROTOCOL_HAS_FRAMEBUFFER=0
+)
+```
+
+这里的关键点是：
+
+- `usermod_openmv_esp32` 是一个 `INTERFACE` target，本身不单独产出 `.a` 或 `.o`
+- 它携带的是一组“使用要求”，包括：
+  - `target_sources`
+  - `target_include_directories`
+  - `target_compile_definitions`
+  - `target_link_options`
+- 这些使用要求会沿着依赖链继续向下传递
+
+传播链如下：
+
+```text
+usermod_openmv_esp32
+  └── usermod
+        └── micropython
+```
+
+因此，这些 `target_compile_definitions(... INTERFACE ...)` 最终会变成 `micropython` 目标编译参数里的：
+
+```text
+-DMICROPY_OPENMV=1
+-DOMV_USB_STACK_TINYUSB=1
+-DOMV_USB_VID=0x37C5
+-DOMV_USB_PID=0x1204
+-DOMV_PROTOCOL_DEFAULT_CHANNELS=0
+-DOMV_PROTOCOL_HAS_FRAMEBUFFER=0
+```
+
+这些宏最直接影响的，是在 `ports/esp32/micropython.cmake` 里通过 `target_sources(...)` 注入进来的 OpenMV 源码：
+
+这里要特别注意一个容易误解的点：
+
+- `boards/ESP32_GENERIC_P4/omv_boardconfig.mk` 里的 `OMV_USB_VID` / `OMV_USB_PID` 是 **Make 变量**
+- `target_compile_definitions(...)` 里的 `OMV_USB_VID` / `OMV_USB_PID` 是 **传给 C 编译器的宏**
+
+对于原生 OpenMV Make 构建，这两者通常在同一条 Make 链里，可以由 Makefile 继续向下转换和传递。  
+但 ESP32 这条路径在进入 `idf.py + CMake` 之后，CMake 默认并不知道顶层 Makefile 里曾经定义过哪些普通变量。因此，如果不在 `ports/esp32/micropython.cmake` 里显式再定义一次，这些值就不会自动出现在 ESP32 固件源码的编译参数中。
+
+也就是说，当前这里的重复定义，本质上是在做一件事：
+
+```text
+把 OpenMV 顶层 Make 世界里的板级配置
+  └── 手动桥接到 ESP-IDF / CMake 世界里的编译宏
+```
+
+- `modules/py_clock.c`
+- `protocol/omv_protocol.c`
+- `protocol/omv_protocol_channel_stdio.c`
+- `protocol/omv_protocol_channel_tinyusb.c`
+- `common/omv_crc.c`
+
+也就是说，这些文件虽然物理上位于 OpenMV 仓库顶层目录树下，但在 ESP32 构建里，它们已经作为 **MicroPython 最终固件目标的一部分** 被编译，因此会看到这些宏定义。
+
+可以把它理解成：
+
+```text
+OpenMV 顶层源码
+  └── 被挂进 micropython 目标
+        └── 编译时自动带上这些 -D 宏
+              └── 影响条件编译和常量值
+```
+
+需要注意的是：
+
+- 这些宏不会影响整个 OpenMV 仓库所有代码
+- 它们只影响 **本次 ESP32 构建中，属于 `micropython` 目标的那些编译单元**
+- 如果某个 OpenMV 源文件没有被挂进这个 target，它就不会看到这些宏
+
+因此，更准确地说：
+
+- 这些 define 会影响“作为 ESP32 MicroPython 固件一部分被编译的 OpenMV 代码”
+- 不会影响 `Makefile` 本身
+- 不会影响 `ports/stm32` 那套 ARM 构建
+- 也不会自动影响没有参与本次 target 的其他源码
+
 ---
 
 ### 编译产物
@@ -386,3 +475,265 @@ make monitor                ✓
 make erase                  ✓
 make clean                  ✓
 ```
+
+---
+
+## 补充：完整的构建流程
+
+这一节从更高一层的视角，把 **OpenMV 原本的构建流程** 和 **ESP32_GENERIC_P4 接入后的流程** 串起来，方便后续继续做 IDE、CSI、外设时定位改动应该落在哪一层。
+
+### 1. OpenMV 原本的构建模型
+
+OpenMV 的顶层构建不是“一个 Makefile 直接编所有板子”，而是一个 **两级分发模型**：
+
+```text
+make TARGET=<BOARD>
+  └── Makefile
+        ├── include boards/<BOARD>/omv_boardconfig.mk
+        ├── 得到 PORT=<stm32/mimxrt/rp2/esp32/...>
+        └── include ports/<PORT>/omv_portconfig.mk
+```
+
+也就是说：
+
+- `TARGET` 决定当前要编哪块板子
+- `boards/<BOARD>/omv_boardconfig.mk` 决定这块板子属于哪个 `PORT`
+- `ports/<PORT>/omv_portconfig.mk` 决定真正的编译、链接、打包、烧录方式
+
+因此，OpenMV 的顶层 `Makefile` 更像一个 **调度器**，而不是所有平台的最终构建实现。
+
+---
+
+### 2. 原生 OpenMV 板子的构建流程
+
+以 `OPENMV4`、`OPENMV4P`、`OPENMV_N6` 这类 ARM 板子为例，流程大体如下：
+
+```text
+make TARGET=OPENMV4
+  └── Makefile
+        ├── 读取 boards/OPENMV4/omv_boardconfig.mk
+        ├── 检查 OpenMV SDK
+        ├── 计算 BUILD/FW_DIR/FROZEN_MANIFEST/MPY_MKARGS 等公共变量
+        └── include ports/stm32/omv_portconfig.mk
+              ├── 调用 MicroPython 子构建
+              ├── 编译 OpenMV 自己的 C 源码
+              ├── 链接 firmware.elf
+              ├── 转成 firmware.bin
+              ├── 如启用 bootloader，再编 bootloader 并拼接 openmv.bin
+              └── 生成 romfs，并可 deploy
+```
+
+关键点：
+
+- ARM 板子依赖 OpenMV SDK 提供的工具链和烧录工具
+- OpenMV 顶层 Makefile 会把公共参数整理好，再交给 `ports/stm32/omv_portconfig.mk`
+- `ports/stm32/omv_portconfig.mk` 会先触发一次 MicroPython 构建，然后再链接 OpenMV 固件
+
+相关入口：
+
+- `Makefile`
+- `ports/stm32/omv_portconfig.mk`
+- `common/micropy.mk`
+- `boot/Makefile`
+
+这条路径里，**OpenMV 自己是主导者**，MicroPython 是一个被调用的子构件。
+
+---
+
+### 3. ESP32_GENERIC_P4 接入后的构建流程
+
+ESP32_GENERIC_P4 没有复用 ARM 那条路径，而是新增了一个 `esp32` port，把顶层构建分发到 ESP-IDF + MicroPython ESP32 port 上。
+
+整体链路如下：
+
+```text
+make TARGET=ESP32_GENERIC_P4
+  └── Makefile
+        ├── include boards/ESP32_GENERIC_P4/omv_boardconfig.mk
+        │     └── PORT=esp32
+        ├── 跳过 OpenMV SDK 检查
+        ├── 设置 BUILD/FW_DIR/FROZEN_MANIFEST/OMV_PORT_DIR 等公共变量
+        └── include ports/esp32/omv_portconfig.mk
+              └── idf.py build
+                    └── lib/micropython/ports/esp32/CMakeLists.txt
+                          └── MicroPython ESP32 board 配置
+                          └── py/usermod.cmake
+                                └── OpenMV 顶层 micropython.cmake
+                                      └── ports/esp32/micropython.cmake
+                                            ├── 注入 OpenMV C 源码
+                                            └── 设置 manifest 相关变量
+                    └── makeimg.py
+                          ├── bootloader.bin
+                          ├── partition-table.bin
+                          ├── micropython.bin
+                          └── firmware.bin
+```
+
+这一版接入后，OpenMV 顶层对 ESP32 的职责主要变成：
+
+- 提供板级配置
+- 提供 OpenMV 自己的模块、协议层、配置头文件和 frozen 脚本
+- 把这些内容以 `USER_C_MODULES` 和 `MICROPY_FROZEN_MANIFEST` 的方式交给 MicroPython/ESP-IDF 构建系统
+
+也就是说，这条路径里 **ESP-IDF + MicroPython 是主导者，OpenMV 是被注入进去的扩展层**。
+
+---
+
+### 4. `TARGET`、`PORT`、`BOARD` 三个概念的关系
+
+在后续继续改代码时，最容易混淆的是这三个词：
+
+| 名称 | 在哪里定义 | 作用 |
+|------|------------|------|
+| `TARGET` | 命令行传入，例如 `make TARGET=ESP32_GENERIC_P4` | 当前编译的板子名 |
+| `PORT` | `boards/<TARGET>/omv_boardconfig.mk` | 当前板子属于哪条 port 构建链 |
+| `MICROPY_BOARD` / `BOARD` | 传给 MicroPython 的板型名 | 给 MicroPython/ESP-IDF 选择对应 board 配置 |
+
+对于本次接入：
+
+```text
+TARGET = ESP32_GENERIC_P4
+PORT   = esp32
+MICROPY_BOARD = ESP32_GENERIC_P4
+```
+
+虽然字符串相同，但含义不同：
+
+- `TARGET` 是顶层 OpenMV 调度用的板子名
+- `PORT` 是顶层路由到哪条构建链
+- `MICROPY_BOARD` 是下游 MicroPython ESP32 port 使用的板型名
+
+---
+
+### 5. OpenMV board 目录和 MicroPython board 目录的区别
+
+这次接入里存在两套 board 目录：
+
+#### OpenMV 的 board 目录
+
+```text
+boards/ESP32_GENERIC_P4/
+```
+
+它负责：
+
+- `PORT=esp32`
+- OpenMV 自己的 `omv_boardconfig.h`
+- `manifest.py`
+- `imlib_config.h`
+- `ulab_config.h`
+
+#### MicroPython 的 board 目录
+
+```text
+lib/micropython/ports/esp32/boards/ESP32_GENERIC_P4/
+```
+
+它负责：
+
+- ESP-IDF 目标芯片选择，例如 `esp32p4`
+- `sdkconfig` 默认值
+- MicroPython ESP32 port 自己的底层板级设置
+
+两者同名，但服务的层级不同：
+
+- OpenMV board 目录服务 OpenMV 顶层构建
+- MicroPython board 目录服务 ESP32 port 底层构建
+
+---
+
+### 6. 冻结脚本和 C 源码接入是两条并行路径
+
+ESP32 构建里，OpenMV 的内容是通过两条线接进去的：
+
+#### 路径 A：C 源码
+
+```text
+USER_C_MODULES=$(TOP_DIR)
+  └── py/usermod.cmake
+        └── OpenMV 顶层 micropython.cmake
+              └── ports/esp32/micropython.cmake
+                    └── target_sources(... py_clock.c / omv_protocol.c / ...)
+```
+
+作用：
+
+- 把 OpenMV 的 C 模块和协议层编进固件
+
+#### 路径 B：frozen Python 脚本
+
+```text
+MICROPY_FROZEN_MANIFEST=boards/ESP32_GENERIC_P4/manifest.py
+  └── MicroPython frozen manifest 处理
+        └── freeze("$(PORT_DIR)/modules", "flashbdev.py")
+        └── freeze("$(OMV_LIB_DIR)/", "_boot.py")
+```
+
+作用：
+
+- 把 `flashbdev.py`、`_boot.py` 等启动脚本直接打进固件
+
+这两条线都是 `idf.py build` 的一部分，但职责不同：
+
+- 路径 A 负责“哪些 C 文件参与编译”
+- 路径 B 负责“哪些 Python 文件被冻结进固件”
+
+---
+
+### 7. 最终产物是怎么形成的
+
+ESP32 构建结束后，底层会先得到几段中间产物：
+
+- `bootloader/bootloader.bin`
+- `partition_table/partition-table.bin`
+- `micropython.bin`
+
+随后由 `makeimg.py` 打包成：
+
+- `firmware.bin`
+- `micropython.uf2`
+
+最后复制到 OpenMV 统一输出目录：
+
+- `build/bin/firmware.bin`
+- `build/bin/micropython.bin`
+
+与 ARM 路径不同的是：
+
+- ARM 板子通常由 OpenMV 顶层 Make 亲自链接并在需要时拼接 `openmv.bin`
+- ESP32 板子由 ESP-IDF 按 ESP32 固件布局生成镜像，OpenMV 只负责接入和转存产物
+
+---
+
+### 8. 一句话总结
+
+OpenMV 原本的构建体系是：
+
+```text
+顶层 Makefile 负责调度
+port Makefile 负责平台实现
+```
+
+而本次 ESP32_GENERIC_P4 接入，本质上是在这个体系里新增了一条新的 port 路线：
+
+```text
+OpenMV 顶层 Makefile
+  └── 新增 PORT=esp32 分支
+        └── 交给 ESP-IDF + MicroPython ESP32 port 构建
+              └── 再把 OpenMV 的 C 模块和 frozen 脚本注入进去
+```
+
+因此，后续如果继续做：
+
+- IDE 联机
+- CSI 摄像头
+- GPIO/I2C/SPI/UART
+- 帧缓冲或图像链路
+
+就可以按下面的思路判断该改哪里：
+
+- 顶层分发问题：改 `Makefile` / `boards/<TARGET>/`
+- ESP32 构建接入问题：改 `ports/esp32/omv_portconfig.mk`
+- OpenMV 模块接入问题：改 `ports/esp32/micropython.cmake`
+- 运行时启动和协议问题：改 `ports/esp32/main.c`、`protocol/`
+- ESP32 芯片/SDK/board 底层问题：改 `lib/micropython/ports/esp32/boards/...`
