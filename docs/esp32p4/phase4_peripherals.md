@@ -19,6 +19,74 @@
 - [ ] `omv_spi.c` — SPI 驱动（用于显示屏、传感器扩展）
 - [ ] `omv_uart.c` — UART 驱动
 
+### GPIO 说明
+
+OpenMV 这里有两层 GPIO 接口，需要区分：
+
+- Python 层：`from machine import Pin`
+- OpenMV C 层：`omv_gpio_*()`
+
+本阶段要补的是 **OpenMV C 层 GPIO 抽象**，不是新增一个 Python 模块。  
+也就是说，目标是让 OpenMV 自己的驱动、模块、传感器代码可以：
+
+```c
+#include "omv_gpio.h"
+omv_gpio_config(...);
+omv_gpio_write(...);
+omv_gpio_read(...);
+```
+
+其中公共头文件在：
+
+```text
+common/omv_gpio.h
+```
+
+这个头定义了 OpenMV 统一的 GPIO 抽象接口，包括：
+
+- `omv_gpio_config`
+- `omv_gpio_deinit`
+- `omv_gpio_read`
+- `omv_gpio_write`
+- `omv_gpio_irq_register`
+- `omv_gpio_irq_enable`
+- `omv_gpio_clock_enable`
+
+需要注意的是，虽然公共头定义得比较完整，但不同 port 并不一定要在第一阶段一次性做满。  
+例如 `rp2` 的实现就比较轻，只先覆盖了当前实际使用到的最小能力。
+
+因此，ESP32P4 这边建议也采用同样的推进方式：
+
+#### 第一阶段：最小 GPIO 支持
+
+- `omv_gpio_config`
+- `omv_gpio_deinit`
+- `omv_gpio_read`
+- `omv_gpio_write`
+
+这四个接口足够先支撑基础外设 bring-up，以及后续逐步接入传感器、显示、控制引脚。
+
+当前阶段的范围建议明确为：
+
+- 先只承诺 basic GPIO
+- 重点是 `read` / `write` 可用
+- `irq_register` / `irq_enable` 暂不作为本阶段交付目标
+- 不把 GPIO 中断回调链路提前算作“已支持”
+
+#### 第二阶段：扩展能力
+
+- `omv_gpio_irq_register`
+- `omv_gpio_irq_enable`
+- `omv_gpio_clock_enable`
+- `omv_gpio_init0`
+- 更完整的 `IT` / `OD` / `ALT` 模式语义
+
+这样做的原因是：
+
+- 先把最常用的 GPIO 能力补齐，降低 ESP32 port 的接入成本
+- 避免在 Phase 4 一开始就被中断、DMA、复杂外设语义拖慢
+- 与 `rp2` 这类轻量 port 的演进方式保持一致
+
 ### 连接能力
 
 - [ ] 评估 Wi-Fi 是否纳入 OpenMV 功能面

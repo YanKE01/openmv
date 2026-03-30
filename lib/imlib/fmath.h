@@ -28,8 +28,12 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <float.h>
+#include <math.h>
+#include "IQmathLib.h"
+#if defined(__ARM_ARCH)
 #include CMSIS_MCU_H
 #include "arm_math.h"
+#endif
 
 float fast_atanf(float x);
 float fast_atan2f(float y, float x);
@@ -65,7 +69,7 @@ static inline int fast_floorf(float x) {
         : [x] "t"  (x));
     return i;
     #else
-    return floorf(x);
+    return _IQint(_IQ(x));
     #endif
 }
 
@@ -100,7 +104,14 @@ static inline int fast_roundf(float x) {
         : [x] "t"  (x));
     return i;
     #else
-    return roundf(x);
+    _iq q = _IQ(x);
+    _iq half = _IQ(0.5f);
+
+    if (q >= 0) {
+        return _IQint(q + half);
+    }
+
+    return _IQint(q - half);
     #endif
 }
 

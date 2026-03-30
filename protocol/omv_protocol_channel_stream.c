@@ -24,10 +24,13 @@
  * OpenMV Protocol Channels.
  */
 
+#include <stddef.h>
 #include "omv_common.h"
 #include "omv_protocol.h"
 #include "omv_boardconfig.h"
 #include "framebuffer.h"
+
+static const size_t stream_header_size = offsetof(framebuffer_header_t, data);
 
 
 static int stream_channel_init(const omv_protocol_channel_t *channel) {
@@ -49,7 +52,7 @@ static int stream_channel_unlock(const omv_protocol_channel_t *channel) {
     framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
     if (mutex_unlock(&fb->lock, MUTEX_TID_IDE)) {
         // Reset header even if we don't hold the lock
-        memset(fb->raw_base, 0, sizeof(framebuffer_header_t));
+        memset(fb->raw_base, 0, stream_header_size);
     }
     return 0;
 }
@@ -57,15 +60,20 @@ static int stream_channel_unlock(const omv_protocol_channel_t *channel) {
 static size_t stream_channel_size(const omv_protocol_channel_t *channel) {
     framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
     framebuffer_header_t *hdr = (framebuffer_header_t *) fb->raw_base;
-    image_t img = {
-        .w = hdr->width,
-        .h = hdr->height,
-        .pixfmt = hdr->pixfmt,
-        .size = hdr->size,
-    };
-    size_t size = image_size(&img);
+    size_t size = 0;
+
+    if (hdr->pixfmt == PIXFORMAT_INVALID || hdr->width == 0 || hdr->height == 0) {
+        return 0;
+    }
+
+    if (IM_IS_JPEG(hdr)) {
+        size = hdr->size;
+    } else {
+        size = hdr->width * hdr->height * hdr->bpp;
+    }
+
     // Return header size + stream data size
-    return !size ? 0 : (size + sizeof(framebuffer_header_t));
+    return !size ? 0 : (size + (hdr->offset ? hdr->offset : stream_header_size));
 }
 
 static size_t stream_channel_shape(const omv_protocol_channel_t *channel, size_t shape[4]) {
@@ -98,7 +106,7 @@ static int stream_channel_ioctl(const omv_protocol_channel_t *channel, uint32_t 
             fb->enabled = u.args[0];
             // Reset stream buffer state
             mutex_init0(&fb->lock);
-            memset(fb->raw_base, 0, sizeof(framebuffer_header_t));
+            memset(fb->raw_base, 0, stream_header_size);
             return 0;
         case OMV_CHANNEL_IOCTL_STREAM_RAW_CFG:
             fb->raw_w = u.args[0];
