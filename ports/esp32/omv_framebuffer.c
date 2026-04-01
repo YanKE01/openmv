@@ -197,20 +197,36 @@ void framebuffer_update_preview(image_t *src) {
     jpeg_encode_cfg_t encode_cfg;
     uint32_t jpeg_size = 0;
     size_t src_size;
+    jpeg_enc_input_format_t src_type;
+    jpeg_down_sampling_type_t sub_sample;
 
     if ((src == NULL) || (fb == NULL) || !fb->enabled || !omv_protocol_is_active()) {
         return;
     }
 
-    if ((src->pixfmt != PIXFORMAT_RGB565) || (src->pixels == NULL) || (src->w <= 0) || (src->h <= 0)) {
+    if ((src->pixels == NULL) || (src->w <= 0) || (src->h <= 0)) {
         return;
+    }
+
+    switch (src->pixfmt) {
+        case PIXFORMAT_RGB565:
+            src_size = (size_t) src->w * (size_t) src->h * sizeof(uint16_t);
+            src_type = JPEG_ENCODE_IN_FORMAT_RGB565;
+            sub_sample = JPEG_DOWN_SAMPLING_YUV422;
+            break;
+        case PIXFORMAT_GRAYSCALE:
+            src_size = (size_t) src->w * (size_t) src->h;
+            src_type = JPEG_ENCODE_IN_FORMAT_GRAY;
+            sub_sample = JPEG_DOWN_SAMPLING_GRAY;
+            break;
+        default:
+            return;
     }
 
     if (!omv_esp32_framebuffer_jpeg_init()) {
         return;
     }
 
-    src_size = (size_t) src->w * (size_t) src->h * sizeof(uint16_t);
     if ((src_size == 0) || (src_size > omv_esp32_fb_jpeg_in_size)) {
         return;
     }
@@ -223,8 +239,8 @@ void framebuffer_update_preview(image_t *src) {
 
     encode_cfg.width = src->w;
     encode_cfg.height = src->h;
-    encode_cfg.src_type = JPEG_ENCODE_IN_FORMAT_RGB565;
-    encode_cfg.sub_sample = JPEG_DOWN_SAMPLING_YUV422;
+    encode_cfg.src_type = src_type;
+    encode_cfg.sub_sample = sub_sample;
     encode_cfg.image_quality = OMV_JPEG_QUALITY_LOW;
 
     if (jpeg_encoder_process(omv_esp32_fb_jpeg_handle,

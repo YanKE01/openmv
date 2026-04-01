@@ -87,7 +87,7 @@ if bdev is None:
 
 
 def create_file(path, data=None):
-    with open(path, "w") as f:
+    with open(path, "wt") as f:
         if data is not None:
             f.write(data)
 

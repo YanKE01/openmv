@@ -35,6 +35,8 @@
 #include "py/objtype.h"
 #include "py/runtime.h"
 #include "py/mphal.h"
+#include "py/mpprint.h"
+#include "py/objstr.h"
 
 #include "imlib.h"
 #include "array.h"
@@ -52,6 +54,10 @@
 #include "simd.h"
 
 const mp_obj_type_t py_image_type;
+
+#ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+static bool py_image_esp32_minimal_convert_rgb565_to_grayscale(image_t *dst, image_t *src, rectangle_t *roi);
+#endif
 
 // Haar Cascade ///////////////////////////////////////////////////////////////
 
@@ -1198,11 +1204,22 @@ static mp_obj_t py_image_to(pixformat_t pixfmt, mp_rom_obj_t default_color_palet
         }
         fb_alloc_free_till_mark();
     } else {
-        fb_alloc_mark();
-        imlib_draw_image(&dst_img, src_img, 0, 0, x_scale, y_scale, &roi,
-                         args[ARG_channel].u_int, args[ARG_alpha].u_int, color_palette, alpha_palette,
-                         args[ARG_hint].u_int, transform, NULL, NULL, NULL);
-        fb_alloc_free_till_mark();
+        bool handled = false;
+
+        if ((x_scale == 1.0f) && (y_scale == 1.0f) &&
+            (args[ARG_channel].u_int == -1) && (args[ARG_alpha].u_int == 255) &&
+            (color_palette == NULL) && (alpha_palette == NULL) &&
+            (transform == NULL)) {
+            handled = py_image_esp32_minimal_convert_rgb565_to_grayscale(&dst_img, src_img, &roi);
+        }
+
+        if (!handled) {
+            fb_alloc_mark();
+            imlib_draw_image(&dst_img, src_img, 0, 0, x_scale, y_scale, &roi,
+                             args[ARG_channel].u_int, args[ARG_alpha].u_int, color_palette, alpha_palette,
+                             args[ARG_hint].u_int, transform, NULL, NULL, NULL);
+            fb_alloc_free_till_mark();
+        }
     }
 
     if ((!args[ARG_copy_to_fb].u_bool) && (!args[ARG_copy].u_bool)) {
@@ -1302,6 +1319,114 @@ static mp_obj_t py_image_flush(mp_obj_t img_obj) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(py_image_flush_obj, py_image_flush);
 
+#ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+static inline void py_image_esp32_minimal_refresh(image_t *img) {
+    framebuffer_update_preview(img);
+}
+
+static bool py_image_esp32_minimal_blit_grayscale_to_rgb565(image_t *dst, image_t *src,
+                                                            int dst_x, int dst_y, rectangle_t *roi) {
+    if ((dst->pixfmt != PIXFORMAT_RGB565) || (src->pixfmt != PIXFORMAT_GRAYSCALE)) {
+        return false;
+    }
+
+    rectangle_t src_roi = roi ? *roi : (rectangle_t) {0, 0, src->w, src->h};
+
+    if ((src_roi.w <= 0) || (src_roi.h <= 0)) {
+        return true;
+    }
+
+    int src_x = src_roi.x;
+    int src_y = src_roi.y;
+    int copy_w = src_roi.w;
+    int copy_h = src_roi.h;
+
+    if (dst_x < 0) {
+        src_x -= dst_x;
+        copy_w += dst_x;
+        dst_x = 0;
+    }
+
+    if (dst_y < 0) {
+        src_y -= dst_y;
+        copy_h += dst_y;
+        dst_y = 0;
+    }
+
+    if ((dst_x >= dst->w) || (dst_y >= dst->h) || (src_x >= src->w) || (src_y >= src->h)) {
+        return true;
+    }
+
+    copy_w = IM_MIN(copy_w, dst->w - dst_x);
+    copy_h = IM_MIN(copy_h, dst->h - dst_y);
+    copy_w = IM_MIN(copy_w, src->w - src_x);
+    copy_h = IM_MIN(copy_h, src->h - src_y);
+
+    if ((copy_w <= 0) || (copy_h <= 0)) {
+        return true;
+    }
+
+    for (int y = 0; y < copy_h; y++) {
+        uint8_t *src_row = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(src, src_y + y) + src_x;
+        uint16_t *dst_row = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(dst, dst_y + y) + dst_x;
+
+        for (int x = 0; x < copy_w; x++) {
+            dst_row[x] = COLOR_Y_TO_RGB565(src_row[x]);
+        }
+    }
+
+    return true;
+}
+
+static bool py_image_esp32_minimal_convert_rgb565_to_grayscale(image_t *dst, image_t *src, rectangle_t *roi) {
+    if ((dst->pixfmt != PIXFORMAT_GRAYSCALE) || (src->pixfmt != PIXFORMAT_RGB565)) {
+        return false;
+    }
+
+    rectangle_t src_roi = roi ? *roi : (rectangle_t) {0, 0, src->w, src->h};
+
+    if ((src_roi.x < 0) || (src_roi.y < 0) ||
+        (src_roi.w <= 0) || (src_roi.h <= 0) ||
+        ((src_roi.x + src_roi.w) > src->w) ||
+        ((src_roi.y + src_roi.h) > src->h) ||
+        (src_roi.w != dst->w) || (src_roi.h != dst->h)) {
+        return false;
+    }
+
+    for (int y = 0; y < dst->h; y++) {
+        uint16_t *src_row = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(src, src_roi.y + y) + src_roi.x;
+        uint8_t *dst_row = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(dst, y);
+
+        for (int x = 0; x < dst->w; x++) {
+            dst_row[x] = COLOR_RGB565_TO_GRAYSCALE(src_row[x]);
+        }
+    }
+
+    return true;
+}
+#else
+static inline void py_image_esp32_minimal_refresh(image_t *img) {
+    (void) img;
+}
+
+static bool py_image_esp32_minimal_blit_grayscale_to_rgb565(image_t *dst, image_t *src,
+                                                            int dst_x, int dst_y, rectangle_t *roi) {
+    (void) dst;
+    (void) src;
+    (void) dst_x;
+    (void) dst_y;
+    (void) roi;
+    return false;
+}
+
+static bool py_image_esp32_minimal_convert_rgb565_to_grayscale(image_t *dst, image_t *src, rectangle_t *roi) {
+    (void) dst;
+    (void) src;
+    (void) roi;
+    return false;
+}
+#endif
+
 //////////////////
 // Drawing Methods
 //////////////////
@@ -1318,6 +1443,7 @@ static mp_obj_t py_image_clear(size_t n_args, const mp_obj_t *args, mp_map_t *kw
         imlib_zero(arg_img, arg_msk, false);
     }
 
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_clear_obj, 1, py_image_clear);
@@ -1338,6 +1464,7 @@ static mp_obj_t py_image_draw_line(size_t n_args, const mp_obj_t *args, mp_map_t
         py_helper_keyword_int(n_args, args, offset + 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_thickness), 1);
 
     imlib_draw_line(arg_img, arg_x0, arg_y0, arg_x1, arg_y1, arg_c, arg_thickness);
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_line_obj, 2, py_image_draw_line);
@@ -1360,6 +1487,7 @@ static mp_obj_t py_image_draw_rectangle(size_t n_args, const mp_obj_t *args, mp_
         py_helper_keyword_int(n_args, args, offset + 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_fill), false);
 
     imlib_draw_rectangle(arg_img, arg_rx, arg_ry, arg_rw, arg_rh, arg_c, arg_thickness, arg_fill);
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_rectangle_obj, 2, py_image_draw_rectangle);
@@ -1381,6 +1509,7 @@ static mp_obj_t py_image_draw_circle(size_t n_args, const mp_obj_t *args, mp_map
         py_helper_keyword_int(n_args, args, offset + 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_fill), false);
 
     imlib_draw_circle(arg_img, arg_cx, arg_cy, arg_cr, arg_c, arg_thickness, arg_fill);
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_circle_obj, 2, py_image_draw_circle);
@@ -1404,6 +1533,7 @@ static mp_obj_t py_image_draw_ellipse(size_t n_args, const mp_obj_t *args, mp_ma
         py_helper_keyword_int(n_args, args, offset + 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_fill), false);
 
     imlib_draw_ellipse(arg_img, arg_cx, arg_cy, arg_rx, arg_ry, arg_r, arg_c, arg_thickness, arg_fill);
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_ellipse_obj, 2, py_image_draw_ellipse);
@@ -1445,6 +1575,7 @@ static mp_obj_t py_image_draw_string(size_t n_args, const mp_obj_t *args, mp_map
                       arg_c, arg_scale, arg_x_spacing, arg_y_spacing, arg_mono_space,
                       arg_char_rotation, arg_char_hmirror, arg_char_vflip,
                       arg_string_rotation, arg_string_hmirror, arg_string_vflip);
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_string_obj, 2, py_image_draw_string);
@@ -1466,6 +1597,7 @@ static mp_obj_t py_image_draw_cross(size_t n_args, const mp_obj_t *args, mp_map_
 
     imlib_draw_line(arg_img, arg_x - arg_s, arg_y, arg_x + arg_s, arg_y, arg_c, arg_thickness);
     imlib_draw_line(arg_img, arg_x, arg_y - arg_s, arg_x, arg_y + arg_s, arg_c, arg_thickness);
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_cross_obj, 2, py_image_draw_cross);
@@ -1504,6 +1636,7 @@ static mp_obj_t py_image_draw_arrow(size_t n_args, const mp_obj_t *args, mp_map_
     imlib_draw_line(arg_img, arg_x0, arg_y0, arg_x1, arg_y1, arg_c, arg_thickness);
     imlib_draw_line(arg_img, arg_x1, arg_y1, a0x, a0y, arg_c, arg_thickness);
     imlib_draw_line(arg_img, arg_x1, arg_y1, a1x, a1y, arg_c, arg_thickness);
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_arrow_obj, 2, py_image_draw_arrow);
@@ -1549,6 +1682,7 @@ static mp_obj_t py_image_draw_edges(size_t n_args, const mp_obj_t *args, mp_map_
         imlib_draw_circle(arg_img, x3, y3, arg_s, arg_c, arg_thickness, arg_fill);
     }
 
+    py_image_esp32_minimal_refresh(arg_img);
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_edges_obj, 2, py_image_draw_edges);
@@ -1874,6 +2008,15 @@ static mp_obj_t py_image_line_op(size_t n_args, const mp_obj_t *pos_args, mp_map
         mask = py_helper_arg_to_image(args[ARG_mask].u_obj, ARG_IMAGE_MUTABLE | ARG_IMAGE_ALLOC);
     }
 
+    if ((!callback) && (!mask) && (args[ARG_channel].u_int == -1) && (args[ARG_alpha].u_int == 255) &&
+        (color_palette == NULL) && (alpha_palette == NULL) && (transform == NULL) &&
+        (x_scale == 1.0f) && (y_scale == 1.0f) &&
+        py_image_esp32_minimal_blit_grayscale_to_rgb565(image, other, args[ARG_x].u_int, args[ARG_y].u_int, &roi)) {
+        fb_alloc_free_till_mark();
+        py_image_esp32_minimal_refresh(image);
+        return pos_args[0];
+    }
+
     if ((!callback) && mask) {
         callback = imlib_mask_line_op;
     }
@@ -1890,6 +2033,7 @@ static mp_obj_t py_image_line_op(size_t n_args, const mp_obj_t *pos_args, mp_map
                      args[ARG_hint].u_int, transform, callback, mask, dst_row_override);
 
     fb_alloc_free_till_mark();
+    py_image_esp32_minimal_refresh(image);
     return pos_args[0];
 }
 
@@ -2004,7 +2148,7 @@ static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_gamma_obj, 1, py_image_gamma);
 
 #endif // IMLIB_ENABLE_ISP_OPS
 
-#ifdef IMLIB_ENABLE_BINARY_OPS
+#if defined(IMLIB_ENABLE_BINARY_OPS)
 /////////////////
 // Binary Methods
 /////////////////
@@ -2077,16 +2221,27 @@ static mp_obj_t py_image_binary(size_t n_args, const mp_obj_t *pos_args, mp_map_
         py_helper_update_framebuffer(&out);
     }
 
+#ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    if (!args[ARG_copy].u_bool) {
+        py_image_esp32_minimal_refresh(&out);
+    }
+#endif
+
     return py_image_from_struct(&out);
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_binary_obj, 1, py_image_binary);
 
 static mp_obj_t py_image_invert(mp_obj_t img_obj) {
-    imlib_invert(py_helper_arg_to_image(img_obj, ARG_IMAGE_MUTABLE));
+    image_t *img = py_helper_arg_to_image(img_obj, ARG_IMAGE_MUTABLE);
+    imlib_invert(img);
+#ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    py_image_esp32_minimal_refresh(img);
+#endif
     return img_obj;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(py_image_invert_obj, py_image_invert);
 
+#if !defined(OMV_PY_IMAGE_ESP32_MINIMAL)
 static mp_obj_t py_image_b_and(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     return py_image_line_op(n_args, pos_args, kw_args, imlib_b_and_line_op);
 }
@@ -2161,9 +2316,10 @@ static mp_obj_t py_image_close(size_t n_args, const mp_obj_t *pos_args, mp_map_t
     return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_close);
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_close_obj, 2, py_image_close);
-#endif // IMLIB_ENABLE_BINARY_OPS
+#endif
+#endif // defined(IMLIB_ENABLE_BINARY_OPS)
 
-#ifdef IMLIB_ENABLE_MATH_OPS
+#if defined(IMLIB_ENABLE_MATH_OPS) && !defined(OMV_PY_IMAGE_ESP32_MINIMAL)
 ///////////////
 // Math Methods
 ///////////////
@@ -2197,9 +2353,9 @@ static mp_obj_t py_image_difference(size_t n_args, const mp_obj_t *pos_args, mp_
     return py_image_line_op(n_args, pos_args, kw_args, imlib_difference_line_op);
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_difference_obj, 1, py_image_difference);
-#endif // IMLIB_ENABLE_MATH_OPS
+#endif // defined(IMLIB_ENABLE_MATH_OPS) && !defined(OMV_PY_IMAGE_ESP32_MINIMAL)
 
-#if defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS)
+#if defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS) && !defined(OMV_PY_IMAGE_ESP32_MINIMAL)
 static mp_obj_t py_image_top_hat(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_top_hat);
 }
@@ -2209,12 +2365,13 @@ static mp_obj_t py_image_black_hat(size_t n_args, const mp_obj_t *pos_args, mp_m
     return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_black_hat);
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_black_hat_obj, 2, py_image_black_hat);
-#endif // defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS)
+#endif // defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS) && !defined(OMV_PY_IMAGE_ESP32_MINIMAL)
 
 ////////////////////
 // Filtering Methods
 ////////////////////
 
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 static mp_obj_t py_image_histeq(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
         py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
@@ -2235,6 +2392,7 @@ static mp_obj_t py_image_histeq(size_t n_args, const mp_obj_t *args, mp_map_t *k
     return args[0];
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_histeq_obj, 1, py_image_histeq);
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
 #ifdef IMLIB_ENABLE_MEAN
 static mp_obj_t py_image_mean(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
@@ -2817,6 +2975,7 @@ static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_similarity_obj, 1, py_image_get_s
 #endif // IMLIB_ENABLE_GET_SIMILARITY
 
 // Statistics Object //
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 #define py_statistics_obj_size    24
 typedef struct py_statistics_obj {
     mp_obj_base_t base;
@@ -3331,8 +3490,10 @@ static MP_DEFINE_CONST_OBJ_TYPE(
     subscr, py_threshold_subscr,
     locals_dict, &py_threshold_locals_dict
     );
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
 // Histogram Object //
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 #define py_histogram_obj_size    3
 typedef struct py_histogram_obj {
     mp_obj_base_t base;
@@ -3571,7 +3732,9 @@ static MP_DEFINE_CONST_OBJ_TYPE(
     subscr, py_histogram_subscr,
     locals_dict, &py_histogram_locals_dict
     );
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 static mp_obj_t py_image_get_histogram(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
@@ -3784,8 +3947,10 @@ static mp_obj_t py_image_get_statistics(size_t n_args, const mp_obj_t *args, mp_
     return o;
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_statistics_obj, 1, py_image_get_statistics);
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
 // Line Object //
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 #define py_line_obj_size    8
 typedef struct py_line_obj {
     mp_obj_base_t base;
@@ -3903,7 +4068,9 @@ static MP_DEFINE_CONST_OBJ_TYPE(
     subscr, py_line_subscr,
     locals_dict, &py_line_locals_dict
     );
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 static mp_obj_t py_image_get_regression(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
@@ -3957,12 +4124,14 @@ static mp_obj_t py_image_get_regression(size_t n_args, const mp_obj_t *args, mp_
     return o;
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_regression_obj, 2, py_image_get_regression);
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
 ///////////////
 // Find Methods
 ///////////////
 
 // Blob Object //
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 #define py_blob_obj_size    12
 typedef struct py_blob_obj {
     mp_obj_base_t base;
@@ -4494,6 +4663,9 @@ static py_blob_obj_t *py_blob_new(find_blobs_list_lnk_data_t *blob) {
 
     return o;
 }
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
+
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 static bool py_image_find_blobs_threshold_cb(void *fun_obj, find_blobs_list_lnk_data_t *blob) {
     return mp_obj_is_true(mp_call_function_1(fun_obj, py_blob_new(blob)));
 }
@@ -4577,6 +4749,7 @@ static mp_obj_t py_image_find_blobs(size_t n_args, const mp_obj_t *args, mp_map_
     return objects_list;
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_blobs_obj, 2, py_image_find_blobs);
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
 #ifdef IMLIB_ENABLE_FIND_LINES
 static mp_obj_t py_image_find_lines(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
@@ -5982,6 +6155,7 @@ static mp_obj_t py_image_find_features(size_t n_args, const mp_obj_t *args, mp_m
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_features_obj, 2, py_image_find_features);
 #endif // IMLIB_ENABLE_FEATURES
 
+#ifndef OMV_PY_IMAGE_ESP32_MINIMAL
 static mp_obj_t py_image_find_eye(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
 
@@ -5999,6 +6173,7 @@ static mp_obj_t py_image_find_eye(size_t n_args, const mp_obj_t *args, mp_map_t 
     return mp_obj_new_tuple(2, eye_obj);
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_eye_obj, 2, py_image_find_eye);
+#endif // !OMV_PY_IMAGE_ESP32_MINIMAL
 
 #ifdef IMLIB_ENABLE_FIND_LBP
 static mp_obj_t py_image_find_lbp(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
@@ -6058,7 +6233,29 @@ static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_keypoints_obj, 1, py_image_find_
 
 #ifdef IMLIB_ENABLE_BINARY_OPS
 static mp_obj_t py_image_find_edges(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+#ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
+    if (arg_img->pixfmt == PIXFORMAT_RGB565) {
+        image_t gray_img = {
+            .w = arg_img->w,
+            .h = arg_img->h,
+            .pixfmt = PIXFORMAT_GRAYSCALE,
+            .size = arg_img->size,
+            .pixels = arg_img->pixels,
+        };
+
+        if (!py_image_esp32_minimal_convert_rgb565_to_grayscale(&gray_img, arg_img, NULL)) {
+            mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Expected a grayscale image"));
+        }
+
+        py_helper_update_framebuffer(&gray_img);
+        memcpy(arg_img, &gray_img, sizeof(image_t));
+    } else if (arg_img->pixfmt != PIXFORMAT_GRAYSCALE) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Expected a grayscale image"));
+    }
+#else
     image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
+#endif
     edge_detector_t edge_type = mp_obj_get_int(args[1]);
 
     rectangle_t roi;
@@ -6089,6 +6286,10 @@ static mp_obj_t py_image_find_edges(size_t n_args, const mp_obj_t *args, mp_map_
         }
 
     }
+
+#ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    py_image_esp32_minimal_refresh(arg_img);
+#endif
 
     return args[0];
 }
@@ -6382,7 +6583,45 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_gamma_corr),          MP_ROM_PTR(&py_func_unavailable_obj)},
     #endif // IMLIB_ENABLE_ISP_OPS
     /* Binary Methods */
-    #ifdef IMLIB_ENABLE_BINARY_OPS
+    #if defined(OMV_PY_IMAGE_ESP32_MINIMAL) && defined(IMLIB_ENABLE_BINARY_OPS)
+    {MP_ROM_QSTR(MP_QSTR_binary),              MP_ROM_PTR(&py_image_binary_obj)},
+    {MP_ROM_QSTR(MP_QSTR_invert),              MP_ROM_PTR(&py_image_invert_obj)},
+    {MP_ROM_QSTR(MP_QSTR_and),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_and),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_nand),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_nand),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_or),                  MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_or),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_nor),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_nor),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_xor),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_xor),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_xnor),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_xnor),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_erode),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_dilate),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_open),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_close),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    #elif defined(OMV_PY_IMAGE_ESP32_MINIMAL)
+    {MP_ROM_QSTR(MP_QSTR_binary),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_invert),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_and),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_and),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_nand),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_nand),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_or),                  MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_or),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_nor),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_nor),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_xor),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_xor),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_xnor),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_b_xnor),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_erode),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_dilate),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_open),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_close),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    #elif defined(IMLIB_ENABLE_BINARY_OPS)
     {MP_ROM_QSTR(MP_QSTR_binary),              MP_ROM_PTR(&py_image_binary_obj)},
     {MP_ROM_QSTR(MP_QSTR_invert),              MP_ROM_PTR(&py_image_invert_obj)},
     {MP_ROM_QSTR(MP_QSTR_and),                 MP_ROM_PTR(&py_image_b_and_obj)},
@@ -6422,7 +6661,19 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_close),               MP_ROM_PTR(&py_func_unavailable_obj)},
     #endif
     /* Math Methods */
-    #ifdef IMLIB_ENABLE_MATH_OPS
+    #if defined(OMV_PY_IMAGE_ESP32_MINIMAL)
+    {MP_ROM_QSTR(MP_QSTR_negate),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_assign),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_replace),             MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_set),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_add),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_sub),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_rsub),                MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_min),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_max),                 MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_difference),          MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_blend),               MP_ROM_PTR(&py_func_unavailable_obj)},
+    #elif defined(IMLIB_ENABLE_MATH_OPS)
     {MP_ROM_QSTR(MP_QSTR_negate),              MP_ROM_PTR(&py_image_invert_obj)},
     {MP_ROM_QSTR(MP_QSTR_assign),              MP_ROM_PTR(&py_image_draw_image_obj)},
     {MP_ROM_QSTR(MP_QSTR_replace),             MP_ROM_PTR(&py_image_draw_image_obj)},
@@ -6446,7 +6697,7 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_difference),          MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_blend),               MP_ROM_PTR(&py_func_unavailable_obj)},
     #endif
-    #if defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS)
+    #if defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS) && !defined(OMV_PY_IMAGE_ESP32_MINIMAL)
     {MP_ROM_QSTR(MP_QSTR_top_hat),             MP_ROM_PTR(&py_image_top_hat_obj)},
     {MP_ROM_QSTR(MP_QSTR_black_hat),           MP_ROM_PTR(&py_image_black_hat_obj)},
     #else
@@ -6454,7 +6705,11 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_black_hat),           MP_ROM_PTR(&py_func_unavailable_obj)},
     #endif // defined(IMLIB_ENABLE_MATH_OPS) && defined (IMLIB_ENABLE_BINARY_OPS)
     /* Filtering Methods */
+    #ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    {MP_ROM_QSTR(MP_QSTR_histeq),              MP_ROM_PTR(&py_func_unavailable_obj)},
+    #else
     {MP_ROM_QSTR(MP_QSTR_histeq),              MP_ROM_PTR(&py_image_histeq_obj)},
+    #endif
     #ifdef IMLIB_ENABLE_MEAN
     {MP_ROM_QSTR(MP_QSTR_mean),                MP_ROM_PTR(&py_image_mean_obj)},
     #else
@@ -6526,6 +6781,15 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     #else
     {MP_ROM_QSTR(MP_QSTR_get_similarity),      MP_ROM_PTR(&py_func_unavailable_obj)},
     #endif
+    #ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    {MP_ROM_QSTR(MP_QSTR_get_hist),            MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_get_histogram),       MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_histogram),           MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_get_stats),           MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_get_statistics),      MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_statistics),          MP_ROM_PTR(&py_func_unavailable_obj)},
+    {MP_ROM_QSTR(MP_QSTR_get_regression),      MP_ROM_PTR(&py_func_unavailable_obj)},
+    #else
     {MP_ROM_QSTR(MP_QSTR_get_hist),            MP_ROM_PTR(&py_image_get_histogram_obj)},
     {MP_ROM_QSTR(MP_QSTR_get_histogram),       MP_ROM_PTR(&py_image_get_histogram_obj)},
     {MP_ROM_QSTR(MP_QSTR_histogram),           MP_ROM_PTR(&py_image_get_histogram_obj)},
@@ -6533,8 +6797,13 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_get_statistics),      MP_ROM_PTR(&py_image_get_statistics_obj)},
     {MP_ROM_QSTR(MP_QSTR_statistics),          MP_ROM_PTR(&py_image_get_statistics_obj)},
     {MP_ROM_QSTR(MP_QSTR_get_regression),      MP_ROM_PTR(&py_image_get_regression_obj)},
+    #endif
     /* Find Methods */
+    #ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    {MP_ROM_QSTR(MP_QSTR_find_blobs),          MP_ROM_PTR(&py_func_unavailable_obj)},
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_blobs),          MP_ROM_PTR(&py_image_find_blobs_obj)},
+    #endif
     #ifdef IMLIB_ENABLE_FIND_LINES
     {MP_ROM_QSTR(MP_QSTR_find_lines),          MP_ROM_PTR(&py_image_find_lines_obj)},
     #else
@@ -6590,7 +6859,11 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     #else
     {MP_ROM_QSTR(MP_QSTR_find_features),       MP_ROM_PTR(&py_func_unavailable_obj)},
     #endif
+    #ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    {MP_ROM_QSTR(MP_QSTR_find_eye),            MP_ROM_PTR(&py_func_unavailable_obj)},
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_eye),            MP_ROM_PTR(&py_image_find_eye_obj)},
+    #endif
     #ifdef IMLIB_ENABLE_FIND_LBP
     {MP_ROM_QSTR(MP_QSTR_find_lbp),            MP_ROM_PTR(&py_image_find_lbp_obj)},
     #else

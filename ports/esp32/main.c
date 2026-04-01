@@ -69,7 +69,6 @@
 #include "framebuffer.h"
 #include "omv_camera.h"
 #include "omv_protocol.h"
-#include "py_image_lite.h"
 #include "omv_test_preview.h"
 
 #if MICROPY_BLUETOOTH_NIMBLE
@@ -173,7 +172,6 @@ soft_reset:
     readline_init0();
     framebuffer_init0();
     omv_esp32_camera_init0();
-    py_esp32_image_init0();
     omv_esp32_test_preview_init0();
 
     machine_pins_init();

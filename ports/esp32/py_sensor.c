@@ -12,8 +12,7 @@
 #include "imlib.h"
 #include "omv_camera.h"
 #include "omv_csi.h"
-#include "omv_imlib_gray_min.h"
-#include "py_image_lite.h"
+#include "py_image.h"
 
 static framebuffer_t *py_sensor_get_mainfb(void) {
     framebuffer_t *fb = framebuffer_get(FB_MAINFB_ID);
@@ -73,12 +72,11 @@ static mp_obj_t py_sensor_snapshot(void) {
     fb->h = omv_esp32_camera_get_height();
     fb->pixfmt = PIXFORMAT_RGB565;
     fb->size = (size_t) fb->w * (size_t) fb->h * sizeof(uint16_t);
-    omv_esp32_imlib_gray_mark_dirty();
 
     image_t image;
     framebuffer_to_image(fb, &image);
     framebuffer_update_preview(&image);
-    return py_esp32_image_from_mainfb();
+    return py_image_from_struct(&image);
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(py_sensor_snapshot_obj, py_sensor_snapshot);
 

@@ -69,7 +69,7 @@ static inline int fast_floorf(float x) {
         : [x] "t"  (x));
     return i;
     #else
-    return _IQint(_IQ(x));
+    return (int) floorf(x);
     #endif
 }
 
@@ -91,7 +91,7 @@ static inline int fast_ceilf(float x) {
         : [x] "t"  (x));
     return i;
     #else
-    return ceilf(x);
+    return (int) ceilf(x);
     #endif
 }
 
@@ -104,14 +104,7 @@ static inline int fast_roundf(float x) {
         : [x] "t"  (x));
     return i;
     #else
-    _iq q = _IQ(x);
-    _iq half = _IQ(0.5f);
-
-    if (q >= 0) {
-        return _IQint(q + half);
-    }
-
-    return _IQint(q - half);
+    return (int) roundf(x);
     #endif
 }
 

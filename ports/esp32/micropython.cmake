@@ -5,23 +5,41 @@ set(MICROPY_SOURCE_PORT_MAIN "../../../../ports/esp32/main.c")
 add_library(usermod_openmv_esp32 INTERFACE)
 target_sources(usermod_openmv_esp32 INTERFACE
     ${OMV_TOP_DIR}/common/mutex.c
+    ${OMV_TOP_DIR}/common/array.c
     ${OMV_TOP_DIR}/modules/py_clock.c
+    ${OMV_TOP_DIR}/modules/py_helper.c
     ${OMV_TOP_DIR}/protocol/omv_protocol.c
     ${OMV_TOP_DIR}/protocol/omv_protocol_channel_stdio.c
     ${OMV_TOP_DIR}/protocol/omv_protocol_channel_stream.c
     ${OMV_TOP_DIR}/protocol/omv_protocol_channel_tinyusb.c
     ${OMV_TOP_DIR}/common/omv_crc.c
+    ${OMV_TOP_DIR}/common/unaligned_memcpy.c
+    ${OMV_TOP_DIR}/common/umm_malloc.c
+    ${OMV_TOP_DIR}/lib/imlib/bayer.c
+    ${OMV_TOP_DIR}/lib/imlib/binary.c
+    ${OMV_TOP_DIR}/lib/imlib/collections.c
+    ${OMV_TOP_DIR}/lib/imlib/draw.c
+    ${OMV_TOP_DIR}/lib/imlib/edge.c
+    ${OMV_TOP_DIR}/lib/imlib/filter.c
+    ${OMV_TOP_DIR}/lib/imlib/fmath.c
     ${OMV_TOP_DIR}/lib/imlib/font.c
+    ${OMV_TOP_DIR}/lib/imlib/fsort.c
+    ${OMV_TOP_DIR}/lib/imlib/imlib.c
+    ${OMV_TOP_DIR}/lib/imlib/jpegd.c
+    ${OMV_TOP_DIR}/lib/imlib/jpege.c
     ${OMV_TOP_DIR}/lib/imlib/lab_tab.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_bar.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_qr.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_blob_min.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_filter_min.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_gray_min.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_edge_min.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_shape_min.c
-    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_draw_min.c
-    ${OMV_TOP_DIR}/ports/esp32/py_image_lite.c
+    ${OMV_TOP_DIR}/lib/imlib/line.c
+    ${OMV_TOP_DIR}/lib/imlib/mathop.c
+    ${OMV_TOP_DIR}/lib/imlib/point.c
+    ${OMV_TOP_DIR}/lib/imlib/png.c
+    ${OMV_TOP_DIR}/lib/imlib/qsort.c
+    ${OMV_TOP_DIR}/lib/imlib/rainbow_tab.c
+    ${OMV_TOP_DIR}/lib/imlib/rectangle.c
+    ${OMV_TOP_DIR}/lib/imlib/sincos_tab.c
+    ${OMV_TOP_DIR}/lib/imlib/xyz_tab.c
+    ${OMV_TOP_DIR}/lib/imlib/yuv.c
+    ${OMV_TOP_DIR}/modules/py_image.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_fb_alloc.c
     ${OMV_TOP_DIR}/ports/esp32/py_sensor.c
     ${OMV_TOP_DIR}/ports/esp32/omv_gpio.c
     ${OMV_TOP_DIR}/ports/esp32/omv_camera.c
@@ -40,6 +58,7 @@ target_include_directories(usermod_openmv_esp32 INTERFACE
 
 target_compile_definitions(usermod_openmv_esp32 INTERFACE
     MICROPY_OPENMV=1
+    OMV_PY_IMAGE_ESP32_MINIMAL=1
     OMV_USB_STACK_TINYUSB=1
     OMV_USB_VID=0x37C5
     OMV_USB_PID=0x1204

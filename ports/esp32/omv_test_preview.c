@@ -142,6 +142,10 @@ static void omv_esp32_test_preview_task(void *arg) {
 }
 
 void omv_esp32_test_preview_init0(void) {
+#ifdef OMV_PY_IMAGE_ESP32_MINIMAL
+    return;
+#endif
+
     if (omv_esp32_test_preview_task_handle != NULL) {
         return;
     }

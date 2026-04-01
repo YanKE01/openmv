@@ -95,6 +95,16 @@ static inline int32_t __SMLSD(uint32_t a, uint32_t b, int32_t acc) {
     return __SMUSD(a, b) + acc;
 }
 
+static inline uint32_t __USAD8(uint32_t a, uint32_t b) {
+    uint32_t sum = 0;
+    for (int i = 0; i < 4; i++) {
+        uint32_t av = (a >> (i * 8)) & 0xFFU;
+        uint32_t bv = (b >> (i * 8)) & 0xFFU;
+        sum += (av > bv) ? (av - bv) : (bv - av);
+    }
+    return sum;
+}
+
 static inline uint32_t __UXTB_RORn(uint32_t value, uint32_t rotate) {
     return (value >> rotate) & 0xFFU;
 }

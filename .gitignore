@@ -45,3 +45,7 @@ tools/sdk_keys.sh
 
 # vscode
 .vscode/
+
+build-idf55/
+build-mpy-cross-clean/
+build-idf55-mpyclean/

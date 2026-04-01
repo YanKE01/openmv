@@ -572,6 +572,9 @@ const uint8_t *py_helper_keyword_alpha_palette(size_t n_args, const mp_obj_t *ar
 
 bool py_helper_is_equal_to_framebuffer(image_t *img) {
     framebuffer_t *fb = framebuffer_get(FB_MAINFB_ID);
+    if ((fb != NULL) && (fb->used_queue == NULL)) {
+        return img->data == (uint8_t *) fb->raw_base;
+    }
     vbuffer_t *buffer = framebuffer_acquire(fb, FB_FLAG_USED | FB_FLAG_PEEK);
 
     return (buffer != NULL) && (img->data == buffer->data);
