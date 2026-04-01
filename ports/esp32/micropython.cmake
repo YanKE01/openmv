@@ -11,7 +11,16 @@ target_sources(usermod_openmv_esp32 INTERFACE
     ${OMV_TOP_DIR}/protocol/omv_protocol_channel_stream.c
     ${OMV_TOP_DIR}/protocol/omv_protocol_channel_tinyusb.c
     ${OMV_TOP_DIR}/common/omv_crc.c
+    ${OMV_TOP_DIR}/lib/imlib/font.c
+    ${OMV_TOP_DIR}/lib/imlib/lab_tab.c
     ${OMV_TOP_DIR}/ports/esp32/omv_bar.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_qr.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_blob_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_filter_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_gray_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_edge_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_shape_min.c
+    ${OMV_TOP_DIR}/ports/esp32/omv_imlib_draw_min.c
     ${OMV_TOP_DIR}/ports/esp32/py_image_lite.c
     ${OMV_TOP_DIR}/ports/esp32/py_sensor.c
     ${OMV_TOP_DIR}/ports/esp32/omv_gpio.c

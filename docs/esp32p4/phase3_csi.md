@@ -8,7 +8,7 @@
 - 完成稳定采图
 - OpenMV IDE 能看到连续预览帧
 - 接入最小 `sensor` 模块，支持基础 Python 抓图测试
-- `image` 算法与完整图像能力放在后续阶段考虑
+- `image` 算法先按最小子集逐步补齐
 
 ## 前置条件
 
@@ -22,6 +22,14 @@
 
 当前还已经接入最小条码识别能力，脚本可以通过 `img.find_barcodes()` 识别 `CODE128`。
 
+当前也已经开始补最小 `image` 算法子集，脚本层已可调用：
+
+- `img.find_edges()`
+- `img.find_blobs()`
+- `img.find_circles()`
+- `img.find_rects()`
+- `img.draw_line()` / `draw_rectangle()` / `draw_circle()` / `draw_cross()` / `draw_string()`
+
 但当前仍属于 bring-up 阶段的临时收口方案，还不是完整的 OpenMV `sensor + image` 能力集。也就是说：
 
 - IDE 预览已正常
@@ -29,10 +37,11 @@
 - 最小 `sensor` 模块已接入
 - 基础 `sensor` Python 测试已通过
 - 最小 `find_barcodes()` 已接入并完成 `CODE128` 验证
+- 最小 `draw / edges / blobs / circles / rects` 已接入
 - 当前 `sensor` 路径仍直接复用 `omv_camera.c`，不是完整 `omv_csi` port 方案
 - 当前条码识别统一基于主 framebuffer 中的 `320x240 RGB565`，不再保留单独 raw 抓图接口
 - 条码扫描路径已经加入轻量 `vTaskDelay(1)` 让出调度，连续识别时 IDE 预览和停止脚本交互已恢复正常
-- `image` 算法能力后续再补
+- 完整 `image` 能力仍未补齐，当前仍是最小 bring-up 子集
 
 ## 当前技术路线
 
