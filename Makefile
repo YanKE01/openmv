@@ -18,6 +18,10 @@ endif
 # Default path to LLVM toolchain.
 LLVM_PATH ?=/opt/LLVM-ET-Arm-18.1.3-Linux-x86_64/bin/
 
+# Include board config early so target-specific logic can branch on PORT.
+OMV_BOARD_CONFIG_DIR:=$(CURDIR)/boards/$(TARGET)/
+include $(OMV_BOARD_CONFIG_DIR)/omv_boardconfig.mk
+
 # Commands
 export CC      = $(Q)arm-none-eabi-gcc
 export CLANG   = $(Q)$(LLVM_PATH)/clang
@@ -124,8 +128,6 @@ CFLAGS += -DOMV_PROFILER_IRQ_ENABLE=$(PROFILE_IRQ)
 CFLAGS += -finstrument-functions-exclude-file-list=lib/cmsis,lib/stm32,/lib/mimxrt,lib/alif,simd.h
 endif
 
-# Include OpenMV board config first to set the port.
-include $(OMV_BOARD_CONFIG_DIR)/omv_boardconfig.mk
 
 # Include MicroPython board config.
 #include $(MP_BOARD_CONFIG_DIR)/mpconfigboard.mk
@@ -258,11 +260,13 @@ export USERMOD_OPT
 clean:
 	$(RM) -fr $(BUILD)
 
+ifneq ($(PORT),esp32)
 size:
 ifeq ($(OMV_ENABLE_BL), 1)
 	$(SIZE) --format=SysV $(FW_DIR)/$(BOOTLOADER).elf
 endif
 	$(SIZE) --format=SysV $(FW_DIR)/$(FIRMWARE).elf
+endif
 
 jlink:
 	setsid ${JLINK_GDB_SERVER} -speed ${JLINK_SPEED} -nogui \
