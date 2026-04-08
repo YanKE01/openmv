@@ -52,7 +52,11 @@
 #endif
 
 #include "usbdbg.h"
+#include "fb_alloc.h"
+#include "framebuffer.h"
 #include "mp_utils.h"
+#include "omv_camera.h"
+#include "omv_gpio.h"
 
 // MicroPython runs as a task under FreeRTOS
 #define MP_TASK_PRIORITY        (ESP_TASK_PRIO_MIN + 1)
@@ -95,6 +99,9 @@ void mp_task(void *pvParameter) {
     uart_stdout_init();
     #endif
     machine_init();
+    omv_gpio_init0();
+    omv_esp32_camera_init0();
+    omv_esp32_camera_init();
 
     #if MICROPY_SSL_MBEDTLS
     mbedtls_platform_set_time(platform_mbedtls_time);
@@ -115,6 +122,8 @@ soft_reset:
     mp_cstack_init_with_top((void *) sp, MICROPY_TASK_STACK_SIZE);
     gc_init(mp_task_heap, mp_task_heap + MICROPY_GC_INITIAL_HEAP_SIZE);
     mp_init();
+    framebuffer_init0();
+    fb_alloc_init0();
     mp_obj_list_append(mp_sys_path, MP_OBJ_NEW_QSTR(MP_QSTR__slash_lib));
     readline_init0();
 

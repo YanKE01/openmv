@@ -15,5 +15,9 @@
 #define OMV_TUSBDBG_ENABLE         (1)
 #define OMV_TUSBDBG_BUFFER         (2048)
 #define OMV_PROFILER_ENABLE        (0)
+#define OMV_JPEG_QUALITY_LOW       (60)
+#define OMV_JPEG_QUALITY_HIGH      (60)
+#define OMV_FB_SIZE                (512 * 1024)
+#define OMV_SB_SIZE                (256 * 1024)
 
 #endif // __OMV_BOARDCONFIG_H__

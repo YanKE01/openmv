@@ -25,6 +25,10 @@
 #ifndef __CMSIS_GCC_H
 #define __CMSIS_GCC_H
 
+#if defined(ESP_PLATFORM) || defined(__riscv)
+#include "../../../ports/esp32/cmsis_compiler.h"
+#else
+
 /* ignore some GCC warnings */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-conversion"
@@ -2208,4 +2212,5 @@ __STATIC_FORCEINLINE int32_t __SMMLA (int32_t op1, int32_t op2, int32_t op3)
 
 #pragma GCC diagnostic pop
 
+#endif /* ESP_PLATFORM || __riscv */
 #endif /* __CMSIS_GCC_H */

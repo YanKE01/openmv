@@ -33,6 +33,7 @@
 #include "py/objstr.h"
 #include "py/runtime.h"
 
+#include "omv_boardconfig.h"
 #if MICROPY_PY_CSI || MICROPY_PY_CSI_NG
 #include "omv_i2c.h"
 #include "omv_csi.h"
@@ -43,7 +44,6 @@
 #endif
 #include "usbdbg.h"
 #include "tinyusb_debug.h"
-#include "omv_boardconfig.h"
 
 #if defined(ESP_PLATFORM)
 #include "esp_mac.h"
@@ -306,7 +306,7 @@ void usbdbg_data_in(uint32_t size, usbdbg_write_callback_t write_callback) {
             #if USBDBG_HAS_FRAMEBUFFER
             static uint32_t last_update_ms = 0;
             framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
-            if (check_timeout_ms(last_update_ms, 50) &&
+            if (check_timeout_ms(last_update_ms, 40) &&
                 mutex_try_lock_fair(&fb->lock, MUTEX_TID_IDE)) {
                 // If header size == 0 frame is not ready
                 if (fb->size == 0) {
