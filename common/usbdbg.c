@@ -33,16 +33,28 @@
 #include "py/objstr.h"
 #include "py/runtime.h"
 
-#include "imlib.h"
 #if MICROPY_PY_CSI || MICROPY_PY_CSI_NG
 #include "omv_i2c.h"
 #include "omv_csi.h"
 #endif
+#include "omv_common.h"
+#if defined(OMV_FB_SIZE) || defined(OMV_SB_SIZE) || defined(OMV_FB_MEMORY)
 #include "framebuffer.h"
+#endif
 #include "usbdbg.h"
 #include "tinyusb_debug.h"
 #include "omv_boardconfig.h"
-#include "py_image.h"
+
+#if defined(ESP_PLATFORM)
+#include "esp_mac.h"
+#include "esp_system.h"
+#endif
+
+#if defined(OMV_FB_SIZE) || defined(OMV_SB_SIZE) || defined(OMV_FB_MEMORY)
+#define USBDBG_HAS_FRAMEBUFFER (1)
+#else
+#define USBDBG_HAS_FRAMEBUFFER (0)
+#endif
 
 static int xfer_offs;
 static int xfer_size;
@@ -57,6 +69,38 @@ static vstr_t script_buf;
 extern uint32_t usb_cdc_buf_len();
 extern uint32_t usb_cdc_get_buf(uint8_t *buf, uint32_t len);
 extern void usb_cdc_reset_buffers(void);
+
+static void usbdbg_get_device_id(uint32_t uid[3]) {
+    memset(uid, 0, 3 * sizeof(*uid));
+
+    #if defined(ESP_PLATFORM)
+    uint8_t chipid[6] = {0};
+    if (esp_efuse_mac_get_default(chipid) == ESP_OK) {
+        uid[1] = ((uint32_t) chipid[0] << 24) |
+                 ((uint32_t) chipid[1] << 16) |
+                 ((uint32_t) chipid[2] << 8)  |
+                 ((uint32_t) chipid[3] << 0);
+        uid[2] = ((uint32_t) chipid[4] << 24) |
+                 ((uint32_t) chipid[5] << 16);
+    }
+    #elif defined(OMV_BOARD_UID_ADDR) && defined(OMV_BOARD_UID_OFFSET)
+    uid[1] = *((unsigned int *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 1));
+    uid[2] = *((unsigned int *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 0));
+    #if (OMV_BOARD_UID_SIZE > 2)
+    uid[0] = *((unsigned int *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 2));
+    #endif
+    #endif
+}
+
+static void usbdbg_system_reset(void) {
+    #if defined(OMV_BOARD_RESET)
+    OMV_BOARD_RESET();
+    #elif defined(ESP_PLATFORM)
+    esp_restart();
+    #elif defined(NVIC_SystemReset)
+    NVIC_SystemReset();
+    #endif
+}
 
 void usbdbg_init() {
     cmd = USBDBG_NONE;
@@ -89,12 +133,18 @@ void usbdbg_set_script_running(bool running) {
 }
 
 inline void usbdbg_set_irq_enabled(bool enabled) {
+    #if defined(OMV_USB_IRQN)
     if (enabled) {
         NVIC_EnableIRQ(OMV_USB_IRQN);
     } else {
         NVIC_DisableIRQ(OMV_USB_IRQN);
     }
+    #if defined(__DSB) && defined(__ISB)
     __DSB(); __ISB();
+    #endif
+    #else
+    (void) enabled;
+    #endif
     irq_enabled = enabled;
 }
 
@@ -109,7 +159,9 @@ static void usbdbg_interrupt_vm(bool ready) {
     usbdbg_set_irq_enabled(false);
 
     // Abort the VM.
+    #if MICROPY_ENABLE_VM_ABORT
     mp_sched_vm_abort();
+    #endif
 
     // When the VM runs again it will raise a KeyboardInterrupt.
     mp_sched_keyboard_interrupt();
@@ -168,6 +220,7 @@ void usbdbg_data_in(uint32_t size, usbdbg_write_callback_t write_callback) {
         case USBDBG_FRAME_SIZE: {
             // Return 0 if FB is locked or not ready.
             uint32_t buffer[3] = { 0 };
+            #if USBDBG_HAS_FRAMEBUFFER
             // Try to lock FB. If header size == 0 frame is not ready
             framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
             if (mutex_try_lock(&fb->lock, MUTEX_TID_IDE)) {
@@ -182,12 +235,14 @@ void usbdbg_data_in(uint32_t size, usbdbg_write_callback_t write_callback) {
                     buffer[2] = fb->size;
                 }
             }
+            #endif
             cmd = USBDBG_NONE;
             write_callback(&buffer, sizeof(buffer));
             break;
         }
 
         case USBDBG_FRAME_DUMP:
+            #if USBDBG_HAS_FRAMEBUFFER
             if (xfer_offs < xfer_size) {
                 framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
                 write_callback(fb->raw_base + sizeof(framebuffer_header_t) + xfer_offs, size);
@@ -198,21 +253,16 @@ void usbdbg_data_in(uint32_t size, usbdbg_write_callback_t write_callback) {
                     mutex_unlock(&fb->lock, MUTEX_TID_IDE);
                 }
             }
+            #endif
             break;
 
         case USBDBG_ARCH_STR: {
             uint8_t buffer[64];
-            unsigned int uid[3] = {
-                #if (OMV_BOARD_UID_SIZE == 2)
-                0U,
-                #else
-                *((unsigned int *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 2)),
-                #endif
-                *((unsigned int *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 1)),
-                *((unsigned int *) (OMV_BOARD_UID_ADDR + OMV_BOARD_UID_OFFSET * 0)),
-            };
+            uint32_t uid[3];
+            usbdbg_get_device_id(uid);
             snprintf((char *) buffer, 64, "%s [%s:%08X%08X%08X]",
-                     OMV_BOARD_ARCH, OMV_BOARD_TYPE, uid[0], uid[1], uid[2]);
+                     OMV_BOARD_ARCH, OMV_BOARD_TYPE,
+                     (unsigned int) uid[0], (unsigned int) uid[1], (unsigned int) uid[2]);
             cmd = USBDBG_NONE;
             write_callback(&buffer, sizeof(buffer));
             break;
@@ -232,7 +282,6 @@ void usbdbg_data_in(uint32_t size, usbdbg_write_callback_t write_callback) {
             uint8_t byte_buffer[size];
             memset(byte_buffer, 0, size);
             uint32_t *buffer = (uint32_t *) byte_buffer;
-            static uint32_t last_update_ms = 0;
 
             // Set script running flag
             if (script_running) {
@@ -254,6 +303,8 @@ void usbdbg_data_in(uint32_t size, usbdbg_write_callback_t write_callback) {
             #endif // OMV_PROFILER_ENABLE
 
             // Limit the frames sent over USB to 20Hz.
+            #if USBDBG_HAS_FRAMEBUFFER
+            static uint32_t last_update_ms = 0;
             framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
             if (check_timeout_ms(last_update_ms, 50) &&
                 mutex_try_lock_fair(&fb->lock, MUTEX_TID_IDE)) {
@@ -272,6 +323,7 @@ void usbdbg_data_in(uint32_t size, usbdbg_write_callback_t write_callback) {
                     last_update_ms = mp_hal_ticks_ms();
                 }
             }
+            #endif
 
             // The rest of this packet is packed with text buffer.
             if (tx_buf_len) {
@@ -325,14 +377,16 @@ void usbdbg_data_out(uint32_t size, usbdbg_read_callback_t read_callback) {
     switch (cmd) {
         case USBDBG_FB_ENABLE: {
             uint32_t enabled = 0;
-            framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
             read_callback(&enabled, 4);
+            #if USBDBG_HAS_FRAMEBUFFER
+            framebuffer_t *fb = framebuffer_get(FB_STREAM_ID);
             framebuffer_set_enabled(fb, enabled);
             if (fb->enabled == 0) {
                 // When disabling framebuffer, the IDE might still be holding FB lock.
                 // If the IDE is not the current lock owner, this operation is ignored.
                 mutex_unlock(&fb->lock, MUTEX_TID_IDE);
             }
+            #endif
             cmd = USBDBG_NONE;
             break;
         }
@@ -432,18 +486,14 @@ void usbdbg_control(void *buffer, uint8_t request, uint32_t size) {
             break;
 
         case USBDBG_SYS_RESET:
-            #if defined(OMV_BOARD_RESET)
-            OMV_BOARD_RESET();
-            #else
-            NVIC_SystemReset();
-            #endif
+            usbdbg_system_reset();
             break;
 
         case USBDBG_SYS_RESET_TO_BL: {
-            #if defined(MICROPY_BOARD_ENTER_BOOTLOADER)
+            #if defined(MICROPY_BOARD_ENTER_BOOTLOADER) && !(defined(OMV_PORT_ESP32) && OMV_PORT_ESP32)
             MICROPY_BOARD_ENTER_BOOTLOADER(0, 0);
             #else
-            NVIC_SystemReset();
+            usbdbg_system_reset();
             #endif
             break;
         }

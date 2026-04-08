@@ -10,6 +10,9 @@
 #define OPENMV_GIT_TAG "unknown"
 #endif
 
+#define MICROPY_WRAP_TUD_CDC_RX_CB(name) __mp_##name
+#define MICROPY_WRAP_TUD_EVENT_HOOK_CB(name) __mp_##name
+
 #define MICROPY_BANNER_NAME_AND_VERSION "OpenMV " OPENMV_GIT_TAG "; MicroPython " MICROPY_GIT_TAG
 
 #include <mpconfigport.h>

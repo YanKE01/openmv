@@ -51,7 +51,7 @@ void __attribute__((weak)) gc_collect(void) {
     #endif
 
     // trace soft timer nodes
-    #ifndef MP_PORT_NO_SOFTTIMER
+    #if !defined(MP_PORT_NO_SOFTTIMER) && defined(MICROPY_PY_PENDSV_ENTER) && defined(MICROPY_PY_PENDSV_EXIT)
     soft_timer_gc_mark_all();
     #endif
 
@@ -71,7 +71,7 @@ bool mp_exec_bootscript(const char *path, bool interruptible) {
         }
 
         // Parse, compile and execute the script.
-        pyexec_file_if_exists(path, true);
+        pyexec_file_if_exists(path);
         nlr_pop();
     } else {
         interrupted = true;

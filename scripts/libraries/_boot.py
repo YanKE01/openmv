@@ -60,6 +60,12 @@ sdcard = None
 
 if bdev is None:
     try:
+        from flashbdev import bdev
+    except Exception:
+        pass
+
+if bdev is None:
+    try:
         import pyb
 
         bdev = pyb.Flash(start=0)
@@ -95,19 +101,22 @@ def create_file(path, data=None):
             f.write(data)
 
 
-try:
-    fat = vfs.VfsFat(bdev)
-    vfs.mount(fat, "/flash")
-except Exception:
-    vfs.VfsFat.mkfs(bdev)
-    fat = vfs.VfsFat(bdev)
-    vfs.mount(fat, "/flash")
-    create_file("/flash/main.py", main_py)
-    create_file("/flash/README.txt", readme_txt)
+fat = None
 
-os.chdir("/flash")
-sys.path.append("/flash")
-sys.path.append("/flash/lib")
+if bdev is not None:
+    try:
+        fat = vfs.VfsFat(bdev)
+        vfs.mount(fat, "/flash")
+    except Exception:
+        vfs.VfsFat.mkfs(bdev)
+        fat = vfs.VfsFat(bdev)
+        vfs.mount(fat, "/flash")
+        create_file("/flash/main.py", main_py)
+        create_file("/flash/README.txt", readme_txt)
+
+    os.chdir("/flash")
+    sys.path.append("/flash")
+    sys.path.append("/flash/lib")
 
 try:
     os.stat("SKIPSD")
@@ -125,9 +134,10 @@ if sdcard is not None:
     except Exception:
         pass  # Fail silently
 
-try:
-    os.stat(".openmv_disk")
-except Exception:
-    create_file(".openmv_disk")
+if bdev is not None:
+    try:
+        os.stat(".openmv_disk")
+    except Exception:
+        create_file(".openmv_disk")
 
 del os, sys, vfs, fat, bdev, sdcard
