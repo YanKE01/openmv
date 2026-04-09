@@ -24,20 +24,21 @@ import os
 import sys
 import vfs
 
-main_py = """import time
-from machine import LED
+main_py = """import sensor
+import display
+import time
 
-led = LED("LED_BLUE")
+sensor.reset()
+sensor.set_pixformat(sensor.RGB565)
+sensor.set_framesize(sensor.QVGA)
+sensor.skip_frames(time=1000)
+
+lcd = display.ESP32Display(backlight=100)
 
 while True:
-    led.on()
-    time.sleep_ms(150)
-    led.off()
-    time.sleep_ms(100)
-    led.on()
-    time.sleep_ms(150)
-    led.off()
-    time.sleep_ms(600)
+    img = sensor.snapshot()
+    lcd.write(img)
+    time.sleep_ms(10)
 """
 
 readme_txt = """Thank you for supporting the OpenMV project!

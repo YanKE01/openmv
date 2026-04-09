@@ -53,6 +53,7 @@ list(APPEND OMV_ESP32_EXTRA_SOURCES
     "${OMV_TOP_DIR}/ports/esp32/omv_debug.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_fb_alloc.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_framebuffer.c"
+    "${OMV_TOP_DIR}/ports/esp32/msc_disk.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_camera.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_gpio.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_sdcard.c"
