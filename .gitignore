@@ -37,3 +37,8 @@ tools/alif/**/*.bin
 tools/alif/**/*.bin.sign
 tools/alif/build/*-map.txt
 tools/st/stedgeai
+
+# Vsode
+######################
+.vscode/
+.codex

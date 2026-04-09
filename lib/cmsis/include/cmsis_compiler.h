@@ -27,6 +27,10 @@
 
 #include <stdint.h>
 
+#if defined(ESP_PLATFORM) || defined(__riscv)
+  #include "../../../ports/esp32/cmsis_compiler.h"
+#else
+
 /*
  * Arm Compiler 4/5
  */
@@ -278,6 +282,7 @@
   #error Unknown compiler.
 #endif
 
+#endif // ESP_PLATFORM
+
 
 #endif /* __CMSIS_COMPILER_H */
-

@@ -92,9 +92,11 @@ int CLAHE(kz_pixel_t *pImage, unsigned int uiXRes, unsigned int uiYRes,
     if (uiYRes % uiNrY) {
         return -4;                        /* y-resolution no multiple of uiNrY */
     }
-    if (Max >= uiNR_OF_GREY) {
+    #ifndef BYTE_IMAGE
+    if ((unsigned int) Max > ((unsigned int) uiNR_OF_GREY - 1U)) {
         return -5;                        /* maximum too large */
     }
+    #endif
     if (Min >= Max) {
         return -6;                        /* minimum equal or larger than maximum */
     }

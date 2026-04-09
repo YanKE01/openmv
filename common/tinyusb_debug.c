@@ -31,13 +31,11 @@
 #include "py/stream.h"
 #include "py/mphal.h"
 #include "py/ringbuf.h"
-#include "pendsv.h"
 
 #include "tusb.h"
 #include "usbdbg.h"
 #include "tinyusb_debug.h"
 #include "omv_common.h"
-#include "cmsis_gcc.h"
 
 #define USBDBG_DATA_TIMEOUT     (1000)
 #define DEBUG_EP_SIZE           (TUD_OPT_HIGH_SPEED ? 512 : 64)
@@ -54,6 +52,14 @@ typedef struct {
 
 static debug_context_t ctx;
 void tinyusb_debug_task(mp_sched_node_t *node);
+
+static bool tinyusb_debug_interrupts_disabled(void) {
+    #if defined(__ARM_ARCH)
+    return (__get_PRIMASK() & 1) != 0;
+    #else
+    return false;
+    #endif
+}
 
 uint32_t usb_cdc_buf_len() {
     return ringbuf_avail(&ctx.ringbuf);
@@ -86,7 +92,7 @@ void usb_cdc_reset_buffers(void) {
 void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const *coding) {
     usb_cdc_reset_buffers();
 
-    #if defined(MICROPY_BOARD_ENTER_BOOTLOADER)
+    #if defined(MICROPY_BOARD_ENTER_BOOTLOADER) && !(defined(OMV_PORT_ESP32) && OMV_PORT_ESP32)
     if (coding->bit_rate == 1200) {
         MICROPY_BOARD_ENTER_BOOTLOADER(0, 0);
     }
@@ -205,7 +211,7 @@ void tinyusb_debug_task(mp_sched_node_t *node) {
 
         if (bytes) {
             ctx.timestamp = mp_hal_ticks_ms();
-        } else if (__get_PRIMASK() & 1) {
+        } else if (tinyusb_debug_interrupts_disabled()) {
             break;
         } else if (check_timeout_ms(ctx.timestamp, USBDBG_DATA_TIMEOUT)) {
             tinyusb_debug_init();
