@@ -94,6 +94,7 @@ typedef struct _py_display_p_t {
 extern const mp_obj_type_t py_spi_display_type;
 extern const mp_obj_type_t py_rgb_display_type;
 extern const mp_obj_type_t py_dsi_display_type;
+extern const mp_obj_type_t py_esp32_display_type;
 extern const mp_obj_type_t py_display_data_type;
 extern const mp_obj_dict_t py_display_locals_dict;
 #endif // __PY_DISPLAY_H__

@@ -4,12 +4,14 @@ set(OMV_ESP32_PORT_MAIN "${OMV_TOP_DIR}/ports/esp32/main.c")
 list(APPEND MICROPY_DEF_COMPONENT
     CMSIS_MCU_H=\"cmsis_compiler.h\"
     MICROPY_OPENMV=1
+    MICROPY_PY_DISPLAY=1
     OMV_PY_IMAGE_ESP32_MINIMAL=1
     OMV_USB_STACK_TINYUSB=1
 )
 list(APPEND OMV_ESP32_EXTRA_SOURCES
     "${OMV_TOP_DIR}/common/mutex.c"
     "${OMV_TOP_DIR}/common/array.c"
+    "${OMV_TOP_DIR}/common/file_utils.c"
     "${OMV_TOP_DIR}/common/mp_utils.c"
     "${OMV_TOP_DIR}/common/tinyusb_debug.c"
     "${OMV_TOP_DIR}/common/unaligned_memcpy.c"
@@ -18,6 +20,7 @@ list(APPEND OMV_ESP32_EXTRA_SOURCES
     "${OMV_TOP_DIR}/lib/imlib/bayer.c"
     "${OMV_TOP_DIR}/lib/imlib/blob.c"
     "${OMV_TOP_DIR}/lib/imlib/binary.c"
+    "${OMV_TOP_DIR}/lib/imlib/bmp.c"
     "${OMV_TOP_DIR}/lib/imlib/clahe.c"
     "${OMV_TOP_DIR}/lib/imlib/collections.c"
     "${OMV_TOP_DIR}/lib/imlib/draw.c"
@@ -28,19 +31,23 @@ list(APPEND OMV_ESP32_EXTRA_SOURCES
     "${OMV_TOP_DIR}/lib/imlib/font.c"
     "${OMV_TOP_DIR}/lib/imlib/fsort.c"
     "${OMV_TOP_DIR}/lib/imlib/imlib.c"
+    "${OMV_TOP_DIR}/lib/imlib/integral.c"
     "${OMV_TOP_DIR}/lib/imlib/jpegd.c"
     "${OMV_TOP_DIR}/lib/imlib/jpege.c"
     "${OMV_TOP_DIR}/lib/imlib/lab_tab.c"
     "${OMV_TOP_DIR}/lib/imlib/line.c"
+    "${OMV_TOP_DIR}/lib/imlib/lodepng.c"
     "${OMV_TOP_DIR}/lib/imlib/mathop.c"
     "${OMV_TOP_DIR}/lib/imlib/point.c"
     "${OMV_TOP_DIR}/lib/imlib/png.c"
+    "${OMV_TOP_DIR}/lib/imlib/ppm.c"
     "${OMV_TOP_DIR}/lib/imlib/qrcode.c"
     "${OMV_TOP_DIR}/lib/imlib/qsort.c"
     "${OMV_TOP_DIR}/lib/imlib/rainbow_tab.c"
     "${OMV_TOP_DIR}/lib/imlib/rectangle.c"
     "${OMV_TOP_DIR}/lib/imlib/sincos_tab.c"
     "${OMV_TOP_DIR}/lib/imlib/stats.c"
+    "${OMV_TOP_DIR}/lib/imlib/template.c"
     "${OMV_TOP_DIR}/lib/imlib/xyz_tab.c"
     "${OMV_TOP_DIR}/lib/imlib/yuv.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_debug.c"
@@ -48,15 +55,18 @@ list(APPEND OMV_ESP32_EXTRA_SOURCES
     "${OMV_TOP_DIR}/ports/esp32/omv_framebuffer.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_camera.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_gpio.c"
+    "${OMV_TOP_DIR}/ports/esp32/omv_sdcard.c"
     "${OMV_TOP_DIR}/ports/esp32/py_sensor.c"
 )
 
 add_library(usermod_openmv_esp32 INTERFACE)
 target_sources(usermod_openmv_esp32 INTERFACE
     ${OMV_TOP_DIR}/modules/py_clock.c
+    ${OMV_TOP_DIR}/modules/py_display.c
     ${OMV_TOP_DIR}/modules/py_helper.c
     ${OMV_TOP_DIR}/modules/py_image.c
     ${OMV_TOP_DIR}/modules/py_imageio.c
+    ${OMV_TOP_DIR}/ports/esp32/py_display_esp32.c
     ${OMV_ESP32_EXTRA_SOURCES}
 )
 target_include_directories(usermod_openmv_esp32 INTERFACE
@@ -70,6 +80,7 @@ target_include_directories(usermod_openmv_esp32 INTERFACE
 )
 target_compile_definitions(usermod_openmv_esp32 INTERFACE
     MICROPY_OPENMV=1
+    MICROPY_PY_DISPLAY=1
     OMV_PY_IMAGE_ESP32_MINIMAL=1
     OMV_USB_STACK_TINYUSB=1
 )

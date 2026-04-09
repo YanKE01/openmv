@@ -257,7 +257,7 @@ static mp_obj_t py_display_bus_read(size_t n_args, const mp_obj_t *pos_args, mp_
 static MP_DEFINE_CONST_FUN_OBJ_KW(py_display_bus_read_obj, 1, py_display_bus_read);
 
 static const mp_rom_map_elem_t py_display_locals_dict_table[] = {
-    { MP_ROM_QSTR(MP_QSTR___name__),            MP_ROM_QSTR(MP_QSTR_display)              },
+    { MP_ROM_QSTR(MP_QSTR___name__),            MP_ROM_QSTR(MP_QSTR_udisplay)             },
     { MP_ROM_QSTR(MP_QSTR___del__),             MP_ROM_PTR(&py_display_deinit_obj)        },
     { MP_ROM_QSTR(MP_QSTR_width),               MP_ROM_PTR(&py_display_width_obj)         },
     { MP_ROM_QSTR(MP_QSTR_height),              MP_ROM_PTR(&py_display_height_obj)        },
@@ -275,7 +275,7 @@ static const mp_rom_map_elem_t py_display_locals_dict_table[] = {
 MP_DEFINE_CONST_DICT(py_display_locals_dict, py_display_locals_dict_table);
 
 static const mp_rom_map_elem_t globals_dict_table[] = {
-    { MP_ROM_QSTR(MP_QSTR___name__),            MP_ROM_QSTR(MP_QSTR_display)            },
+    { MP_ROM_QSTR(MP_QSTR___name__),            MP_ROM_QSTR(MP_QSTR_udisplay)           },
     { MP_ROM_QSTR(MP_QSTR_QVGA),                MP_ROM_INT(DISPLAY_RESOLUTION_QVGA)     },
     { MP_ROM_QSTR(MP_QSTR_TQVGA),               MP_ROM_INT(DISPLAY_RESOLUTION_TQVGA)    },
     { MP_ROM_QSTR(MP_QSTR_FHVGA),               MP_ROM_INT(DISPLAY_RESOLUTION_FHVGA)    },
@@ -304,6 +304,9 @@ static const mp_rom_map_elem_t globals_dict_table[] = {
     #ifdef OMV_DSI_DISPLAY_CONTROLLER
     { MP_ROM_QSTR(MP_QSTR_DSIDisplay),          MP_ROM_PTR(&py_dsi_display_type)        },
     #endif
+    #if defined(OMV_PORT_ESP32)
+    { MP_ROM_QSTR(MP_QSTR_ESP32Display),        MP_ROM_PTR(&py_esp32_display_type)      },
+    #endif
     #if OMV_DISPLAY_CEC_ENABLE || OMV_DISPLAY_DDC_ENABLE
     { MP_ROM_QSTR(MP_QSTR_DisplayData),         MP_ROM_PTR(&py_display_data_type)       },
     #endif
@@ -315,5 +318,5 @@ const mp_obj_module_t display_module = {
     .globals = (mp_obj_t) &globals_dict,
 };
 
-MP_REGISTER_EXTENSIBLE_MODULE(MP_QSTR_display, display_module);
+MP_REGISTER_EXTENSIBLE_MODULE(MP_QSTR_udisplay, display_module);
 #endif // MICROPY_PY_DISPLAY

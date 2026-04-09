@@ -57,6 +57,7 @@
 #include "mp_utils.h"
 #include "omv_camera.h"
 #include "omv_gpio.h"
+#include "omv_sdcard.h"
 
 // MicroPython runs as a task under FreeRTOS
 #define MP_TASK_PRIORITY        (ESP_TASK_PRIO_MIN + 1)
@@ -69,6 +70,7 @@ typedef struct _native_code_node_t {
 static native_code_node_t *native_code_head = NULL;
 
 static void esp_native_code_free_all(void);
+static void omv_mount_sdcard_if_present(void);
 
 int vprintf_null(const char *format, va_list ap) {
     return 0;
@@ -131,6 +133,8 @@ soft_reset:
     #if MICROPY_PY_MACHINE_I2S
     machine_i2s_init0();
     #endif
+    omv_esp32_sdcard_init0();
+    omv_mount_sdcard_if_present();
 
     pyexec_frozen_module("_boot.py", false);
 
@@ -273,6 +277,35 @@ static void esp_native_code_free_all(void) {
         heap_caps_free(native_code_head);
         native_code_head = next;
     }
+}
+
+static void omv_mount_sdcard_if_present(void) {
+    #if MICROPY_HW_ENABLE_SDCARD
+    const char *path = "/sdcard";
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        const char *lookup_path = path;
+        if (mp_vfs_lookup_path(path, &lookup_path) != MP_VFS_NONE) {
+            mp_vfs_umount(mp_obj_new_str("/sdcard", 7));
+        }
+
+        mp_obj_t sdcard_kwargs[] = {
+            MP_OBJ_NEW_QSTR(MP_QSTR_slot),
+            MP_OBJ_NEW_SMALL_INT(0),
+            MP_OBJ_NEW_QSTR(MP_QSTR_width),
+            MP_OBJ_NEW_SMALL_INT(4),
+        };
+        mp_obj_t sdcard = mp_call_function_n_kw(MP_OBJ_FROM_PTR(&machine_sdcard_type), 0, 2, sdcard_kwargs);
+        mp_obj_t mount_args[] = {
+            sdcard,
+            mp_obj_new_str("/sdcard", 7),
+        };
+        mp_vfs_mount(2, mount_args, (mp_map_t *) &mp_const_empty_map);
+        nlr_pop();
+    } else {
+        // Ignore missing/unusable SD card and continue boot.
+    }
+    #endif
 }
 
 void *esp_native_code_commit(void *buf, size_t len, void *reloc) {
