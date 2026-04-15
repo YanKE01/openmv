@@ -9143,8 +9143,8 @@ struct ufrec
 
 static inline unionfind_t *unionfind_create(uint32_t maxid)
 {
-    unionfind_t *uf = (unionfind_t*) fb_alloc(sizeof(unionfind_t), FB_ALLOC_NO_HINT);
-    uf->data = (struct ufrec*) fb_alloc((maxid+1) * sizeof(struct ufrec), FB_ALLOC_NO_HINT);
+    unionfind_t *uf = (unionfind_t*) fb_alloc(sizeof(unionfind_t), FB_ALLOC_PREFER_INTERNAL);
+    uf->data = (struct ufrec*) fb_alloc((maxid+1) * sizeof(struct ufrec), FB_ALLOC_PREFER_INTERNAL);
     for (int i = 0; i <= maxid; i++) {
         uf->data[i].parent = i;
     }
@@ -10200,11 +10200,11 @@ image_u8_t *threshold(apriltag_detector_t *td, image_u8_t *im)
     assert(w < 32768);
     assert(h < 32768);
 
-    image_u8_t *threshim = fb_alloc(sizeof(image_u8_t), FB_ALLOC_NO_HINT);
+    image_u8_t *threshim = fb_alloc(sizeof(image_u8_t), FB_ALLOC_PREFER_INTERNAL);
     threshim->width = w;
     threshim->height = h;
     threshim->stride = s;
-    threshim->buf = fb_alloc(w * h, FB_ALLOC_NO_HINT);
+    threshim->buf = fb_alloc(w * h, FB_ALLOC_PREFER_INTERNAL);
     assert(threshim->stride == s);
 
     // The idea is to find the maximum and minimum values in a
@@ -10237,8 +10237,8 @@ image_u8_t *threshold(apriltag_detector_t *td, image_u8_t *im)
     int tw = w / tilesz;
     int th = h / tilesz;
 
-    uint8_t *im_max = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_NO_HINT);
-    uint8_t *im_min = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_NO_HINT);
+    uint8_t *im_max = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_PREFER_INTERNAL);
+    uint8_t *im_min = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_PREFER_INTERNAL);
 
     // first, collect min/max statistics for each tile
     for (int ty = 0; ty < th; ty++) {
@@ -10288,8 +10288,8 @@ image_u8_t *threshold(apriltag_detector_t *td, image_u8_t *im)
     // over larger areas. This reduces artifacts due to abrupt changes
     // in the threshold value.
     if (1) {
-        uint8_t *im_max_tmp = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_NO_HINT);
-        uint8_t *im_min_tmp = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_NO_HINT);
+        uint8_t *im_max_tmp = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_PREFER_INTERNAL);
+        uint8_t *im_min_tmp = fb_alloc(tw*th*sizeof(uint8_t), FB_ALLOC_PREFER_INTERNAL);
 
 #ifdef OPTIMIZED
         // Checking boundaries on every pixel wastes significant time; just break it into 5 pieces
@@ -10538,11 +10538,11 @@ image_u8_t *threshold(apriltag_detector_t *td, image_u8_t *im)
     // this is a dilate/erode deglitching scheme that does not improve
     // anything as far as I can tell.
     if (0 || td->qtp.deglitch) {
-        image_u8_t *tmp = fb_alloc(sizeof(image_u8_t), FB_ALLOC_NO_HINT);
+        image_u8_t *tmp = fb_alloc(sizeof(image_u8_t), FB_ALLOC_PREFER_INTERNAL);
         tmp->width = w;
         tmp->height = h;
         tmp->stride = s;
-        tmp->buf = fb_alloc(w * h, FB_ALLOC_NO_HINT);
+        tmp->buf = fb_alloc(w * h, FB_ALLOC_PREFER_INTERNAL);
 
         for (int y = 1; y + 1 < h; y++) {
             for (int x = 1; x + 1 < w; x++) {
@@ -10599,7 +10599,7 @@ zarray_t *apriltag_quad_thresh(apriltag_detector_t *td, image_u8_t *im, bool ove
     }
 
     uint32_t nclustermap;
-    struct uint32_zarray_entry **clustermap = fb_alloc0_all(&nclustermap, FB_ALLOC_PREFER_SPEED);
+    struct uint32_zarray_entry **clustermap = fb_alloc0_all(&nclustermap, FB_ALLOC_PREFER_INTERNAL);
     nclustermap /= sizeof(struct uint32_zarray_entry*);
     if (!nclustermap) fb_alloc_fail();
 
@@ -11943,7 +11943,7 @@ void apriltag_detections_destroy(zarray_t *detections)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void imlib_find_apriltags(list_t *out, image_t *ptr, rectangle_t *roi, apriltag_families_t families,
-                          float fx, float fy, float cx, float cy)
+                          float fx, float fy, float cx, float cy, bool pose)
 {
     // Frame Buffer Memory Usage...
     // -> GRAYSCALE Input Image = w*h*1
@@ -11994,7 +11994,7 @@ void imlib_find_apriltags(list_t *out, image_t *ptr, rectangle_t *roi, apriltag_
     img.w = roi->w;
     img.h = roi->h;
     img.pixfmt = PIXFORMAT_GRAYSCALE;
-    img.data = fb_alloc(image_size(&img), FB_ALLOC_NO_HINT);
+    img.data = fb_alloc(image_size(&img), FB_ALLOC_PREFER_INTERNAL);
     imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 255, NULL, NULL, 0, NULL, NULL, NULL, NULL);
 
     image_u8_t im;
@@ -12074,16 +12074,25 @@ void imlib_find_apriltags(list_t *out, image_t *ptr, rectangle_t *roi, apriltag_
         lnk_data.goodness = det->goodness / 255.0; // scale to [0:1]
         lnk_data.decision_margin = det->decision_margin / 255.0; // scale to [0:1]
 
-        matd_t *pose = homography_to_pose(det->H, -fx, fy, cx, cy);
+        if (pose) {
+            matd_t *pose_m = homography_to_pose(det->H, -fx, fy, cx, cy);
 
-        lnk_data.x_translation = MATD_EL(pose, 0, 3);
-        lnk_data.y_translation = MATD_EL(pose, 1, 3);
-        lnk_data.z_translation = MATD_EL(pose, 2, 3);
-        lnk_data.x_rotation = fast_atan2f(MATD_EL(pose, 2, 1), MATD_EL(pose, 2, 2));
-        lnk_data.y_rotation = fast_atan2f(-MATD_EL(pose, 2, 0), fast_sqrtf(sq(MATD_EL(pose, 2, 1)) + sq(MATD_EL(pose, 2, 2))));
-        lnk_data.z_rotation = fast_atan2f(MATD_EL(pose, 1, 0), MATD_EL(pose, 0, 0));
+            lnk_data.x_translation = MATD_EL(pose_m, 0, 3);
+            lnk_data.y_translation = MATD_EL(pose_m, 1, 3);
+            lnk_data.z_translation = MATD_EL(pose_m, 2, 3);
+            lnk_data.x_rotation = fast_atan2f(MATD_EL(pose_m, 2, 1), MATD_EL(pose_m, 2, 2));
+            lnk_data.y_rotation = fast_atan2f(-MATD_EL(pose_m, 2, 0), fast_sqrtf(sq(MATD_EL(pose_m, 2, 1)) + sq(MATD_EL(pose_m, 2, 2))));
+            lnk_data.z_rotation = fast_atan2f(MATD_EL(pose_m, 1, 0), MATD_EL(pose_m, 0, 0));
 
-        matd_destroy(pose);
+            matd_destroy(pose_m);
+        } else {
+            lnk_data.x_translation = 0.0f;
+            lnk_data.y_translation = 0.0f;
+            lnk_data.z_translation = 0.0f;
+            lnk_data.x_rotation = 0.0f;
+            lnk_data.y_rotation = 0.0f;
+            lnk_data.z_rotation = 0.0f;
+        }
 
         list_push_back(out, &lnk_data);
     }
