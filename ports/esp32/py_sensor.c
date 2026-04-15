@@ -41,8 +41,10 @@ static mp_obj_t py_sensor_reset(void) {
 static MP_DEFINE_CONST_FUN_OBJ_0(py_sensor_reset_obj, py_sensor_reset);
 
 static mp_obj_t py_sensor_set_pixformat(mp_obj_t pixformat_in) {
-    if (mp_obj_get_int(pixformat_in) != PIXFORMAT_RGB565) {
-        mp_raise_ValueError(MP_ERROR_TEXT("only RGB565 is supported"));
+    int pixformat = mp_obj_get_int(pixformat_in);
+
+    if (!omv_esp32_camera_set_pixformat(pixformat)) {
+        mp_raise_ValueError(MP_ERROR_TEXT("only RGB565 and GRAYSCALE are supported"));
     }
 
     return mp_const_none;
@@ -50,8 +52,10 @@ static mp_obj_t py_sensor_set_pixformat(mp_obj_t pixformat_in) {
 static MP_DEFINE_CONST_FUN_OBJ_1(py_sensor_set_pixformat_obj, py_sensor_set_pixformat);
 
 static mp_obj_t py_sensor_set_framesize(mp_obj_t framesize_in) {
-    if (mp_obj_get_int(framesize_in) != OMV_CSI_FRAMESIZE_QVGA) {
-        mp_raise_ValueError(MP_ERROR_TEXT("only QVGA is supported"));
+    int framesize = mp_obj_get_int(framesize_in);
+
+    if (!omv_esp32_camera_set_framesize(framesize)) {
+        mp_raise_ValueError(MP_ERROR_TEXT("only QQVGA and QVGA are supported"));
     }
 
     return mp_const_none;
@@ -60,18 +64,22 @@ static MP_DEFINE_CONST_FUN_OBJ_1(py_sensor_set_framesize_obj, py_sensor_set_fram
 
 static mp_obj_t py_sensor_snapshot(void) {
     framebuffer_t *fb = py_sensor_get_mainfb();
-    size_t pixel_count = fb->raw_size / sizeof(uint16_t);
+    uint32_t pixformat;
+    size_t frame_size;
 
     py_sensor_ensure_camera_ready();
+    pixformat = omv_esp32_camera_get_pixformat();
+    frame_size = (size_t) omv_esp32_camera_get_width() * (size_t) omv_esp32_camera_get_height() *
+                 ((pixformat == PIXFORMAT_GRAYSCALE) ? sizeof(uint8_t) : sizeof(uint16_t));
 
-    if (!omv_esp32_camera_capture_rgb565((uint16_t *) fb->raw_base, pixel_count)) {
+    if (!omv_esp32_camera_capture((uint8_t *) fb->raw_base, fb->raw_size)) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("snapshot failed"));
     }
 
     fb->w = omv_esp32_camera_get_width();
     fb->h = omv_esp32_camera_get_height();
-    fb->pixfmt = PIXFORMAT_RGB565;
-    fb->size = (size_t) fb->w * (size_t) fb->h * sizeof(uint16_t);
+    fb->pixfmt = pixformat;
+    fb->size = frame_size;
 
     image_t image;
     framebuffer_to_image(fb, &image);
@@ -142,7 +150,6 @@ static mp_obj_t py_sensor_skip_frames(size_t n_args, const mp_obj_t *pos_args, m
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     framebuffer_t *fb = py_sensor_get_mainfb();
-    size_t pixel_count = fb->raw_size / sizeof(uint16_t);
     uint32_t n = args[ARG_n].u_int;
     uint32_t duration_ms = args[ARG_time].u_int;
     uint32_t end_ms = mp_hal_ticks_ms() + duration_ms;
@@ -154,7 +161,7 @@ static mp_obj_t py_sensor_skip_frames(size_t n_args, const mp_obj_t *pos_args, m
     }
 
     while ((n > 0) || (duration_ms && ((int32_t) (mp_hal_ticks_ms() - end_ms) < 0))) {
-        if (!omv_esp32_camera_capture_rgb565((uint16_t *) fb->raw_base, pixel_count)) {
+        if (!omv_esp32_camera_capture((uint8_t *) fb->raw_base, fb->raw_size)) {
             mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("skip_frames failed"));
         }
 
@@ -170,6 +177,8 @@ static MP_DEFINE_CONST_FUN_OBJ_KW(py_sensor_skip_frames_obj, 0, py_sensor_skip_f
 static const mp_rom_map_elem_t sensor_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_sensor) },
     { MP_ROM_QSTR(MP_QSTR_RGB565), MP_ROM_INT(PIXFORMAT_RGB565) },
+    { MP_ROM_QSTR(MP_QSTR_GRAYSCALE), MP_ROM_INT(PIXFORMAT_GRAYSCALE) },
+    { MP_ROM_QSTR(MP_QSTR_QQVGA), MP_ROM_INT(OMV_CSI_FRAMESIZE_QQVGA) },
     { MP_ROM_QSTR(MP_QSTR_QVGA), MP_ROM_INT(OMV_CSI_FRAMESIZE_QVGA) },
     { MP_ROM_QSTR(MP_QSTR_reset), MP_ROM_PTR(&py_sensor_reset_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_pixformat), MP_ROM_PTR(&py_sensor_set_pixformat_obj) },

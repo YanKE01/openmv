@@ -47,3 +47,6 @@ erase:
 
 monitor:
 	$(Q)cd $(ESP32_PORT_DIR) && idf.py $(ESP32_IDF_ARGS) -B $(ESP32_BUILD) $(ESP32_IDF_DEVICE_ARGS) monitor
+
+merge:
+	$(Q)cd $(ESP32_PORT_DIR) && idf.py $(ESP32_IDF_ARGS) -B $(ESP32_BUILD) $(ESP32_IDF_DEVICE_ARGS) merge-bin
