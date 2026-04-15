@@ -23,7 +23,9 @@
 #include "linux/videodev2.h"
 
 #include "common/mutex.h"
+#include "imlib.h"
 #include "omv_camera.h"
+#include "omv_csi.h"
 #include "omv_debug.h"
 
 #define OMV_ESP32_CAMERA_INPUT_WIDTH            (1280)
@@ -32,8 +34,10 @@
 #define OMV_ESP32_CAMERA_ACTIVE_INPUT_HEIGHT    (480)
 #define OMV_ESP32_CAMERA_ACTIVE_INPUT_OFFSET_X  (320)
 #define OMV_ESP32_CAMERA_ACTIVE_INPUT_OFFSET_Y  (120)
-#define OMV_ESP32_CAMERA_OUTPUT_WIDTH           (320)
-#define OMV_ESP32_CAMERA_OUTPUT_HEIGHT          (240)
+#define OMV_ESP32_CAMERA_OUTPUT_QQVGA_WIDTH     (160)
+#define OMV_ESP32_CAMERA_OUTPUT_QQVGA_HEIGHT    (120)
+#define OMV_ESP32_CAMERA_OUTPUT_QVGA_WIDTH      (320)
+#define OMV_ESP32_CAMERA_OUTPUT_QVGA_HEIGHT     (240)
 #define OMV_ESP32_CAMERA_BUFFER_COUNT           (2)
 #define OMV_ESP32_CAMERA_SCCB_I2C_PORT          (0)
 #define OMV_ESP32_CAMERA_SCCB_I2C_SCL_PIN       (13)
@@ -65,6 +69,7 @@ typedef struct {
     uint32_t width;
     uint32_t height;
     uint32_t pixfmt;
+    uint32_t output_pixfmt;
     size_t ppa_out_size;
     ppa_client_handle_t ppa_handle;
     esp_cam_sensor_xclk_handle_t xclk_handle;
@@ -75,8 +80,47 @@ typedef struct {
 
 static omv_esp32_camera_t camera_ctx;
 
+static void omv_esp32_camera_release_ppa(void);
+static int omv_esp32_camera_init_ppa(void);
+
+static bool omv_esp32_camera_framesize_to_dimensions(uint32_t framesize, uint32_t *width, uint32_t *height) {
+    if ((width == NULL) || (height == NULL)) {
+        return false;
+    }
+
+    switch (framesize) {
+        case OMV_CSI_FRAMESIZE_QQVGA:
+            *width = OMV_ESP32_CAMERA_OUTPUT_QQVGA_WIDTH;
+            *height = OMV_ESP32_CAMERA_OUTPUT_QQVGA_HEIGHT;
+            return true;
+        case OMV_CSI_FRAMESIZE_QVGA:
+            *width = OMV_ESP32_CAMERA_OUTPUT_QVGA_WIDTH;
+            *height = OMV_ESP32_CAMERA_OUTPUT_QVGA_HEIGHT;
+            return true;
+        default:
+            return false;
+    }
+}
+
 static size_t omv_esp32_camera_align_up(size_t value, size_t alignment) {
     return ((value + alignment - 1) / alignment) * alignment;
+}
+
+static size_t omv_esp32_camera_output_bpp(uint32_t pixformat) {
+    return (pixformat == PIXFORMAT_GRAYSCALE) ? sizeof(uint8_t) : sizeof(uint16_t);
+}
+
+static size_t omv_esp32_camera_output_size(uint32_t width, uint32_t height, uint32_t pixformat) {
+    return (size_t) width * (size_t) height * omv_esp32_camera_output_bpp(pixformat);
+}
+
+static ppa_srm_color_mode_t omv_esp32_camera_output_color_mode(uint32_t pixformat) {
+    return (pixformat == PIXFORMAT_GRAYSCALE) ? PPA_SRM_COLOR_MODE_GRAY8 : PPA_SRM_COLOR_MODE_RGB565;
+}
+
+static bool omv_esp32_camera_reinit_ppa_locked(void) {
+    omv_esp32_camera_release_ppa();
+    return omv_esp32_camera_init_ppa() == 0;
 }
 
 static void omv_esp32_camera_stop_xclk(void) {
@@ -209,7 +253,7 @@ static void omv_esp32_camera_release_ppa(void) {
 static int omv_esp32_camera_init_ppa(void) {
     esp_err_t ret;
     size_t cache_align = 0;
-    size_t out_size = OMV_ESP32_CAMERA_OUTPUT_WIDTH * OMV_ESP32_CAMERA_OUTPUT_HEIGHT * sizeof(uint16_t);
+    size_t out_size;
     ppa_client_config_t ppa_cfg = {
         .oper_type = PPA_OPERATION_SRM,
     };
@@ -219,6 +263,13 @@ static int omv_esp32_camera_init_ppa(void) {
         OMV_DEBUG("[OMV] camera get cache align failed\r\n");
         return -1;
     }
+
+    if ((camera_ctx.width == 0) || (camera_ctx.height == 0)) {
+        camera_ctx.width = OMV_ESP32_CAMERA_OUTPUT_QVGA_WIDTH;
+        camera_ctx.height = OMV_ESP32_CAMERA_OUTPUT_QVGA_HEIGHT;
+    }
+
+    out_size = omv_esp32_camera_output_size(camera_ctx.width, camera_ctx.height, camera_ctx.output_pixfmt);
 
     ret = ppa_register_client(&ppa_cfg, &camera_ctx.ppa_handle);
     if (ret != ESP_OK) {
@@ -239,9 +290,6 @@ static int omv_esp32_camera_init_ppa(void) {
         omv_esp32_camera_release_ppa();
         return -1;
     }
-
-    camera_ctx.width = OMV_ESP32_CAMERA_OUTPUT_WIDTH;
-    camera_ctx.height = OMV_ESP32_CAMERA_OUTPUT_HEIGHT;
     camera_ctx.active_input_width = OMV_ESP32_CAMERA_ACTIVE_INPUT_WIDTH;
     camera_ctx.active_input_height = OMV_ESP32_CAMERA_ACTIVE_INPUT_HEIGHT;
     camera_ctx.active_input_offset_x = OMV_ESP32_CAMERA_ACTIVE_INPUT_OFFSET_X;
@@ -405,6 +453,7 @@ void omv_esp32_camera_deinit(void) {
     camera_ctx.width = 0;
     camera_ctx.height = 0;
     camera_ctx.pixfmt = 0;
+    camera_ctx.output_pixfmt = PIXFORMAT_RGB565;
 }
 
 bool omv_esp32_camera_is_ready(void) {
@@ -413,6 +462,54 @@ bool omv_esp32_camera_is_ready(void) {
            camera_ctx.ppa_out_buf != NULL &&
            camera_ctx.pixfmt == V4L2_PIX_FMT_RGB565 &&
            camera_ctx.width != 0 && camera_ctx.height != 0;
+}
+
+bool omv_esp32_camera_set_pixformat(uint32_t pixformat) {
+    if ((pixformat != PIXFORMAT_RGB565) && (pixformat != PIXFORMAT_GRAYSCALE)) {
+        return false;
+    }
+
+    mutex_lock(&camera_ctx.lock, MUTEX_TID_OMV);
+    if (camera_ctx.output_pixfmt == pixformat) {
+        mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+        return true;
+    }
+
+    camera_ctx.output_pixfmt = pixformat;
+    if (camera_ctx.initialized && !omv_esp32_camera_reinit_ppa_locked()) {
+        mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+        return false;
+    }
+    mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+    return true;
+}
+
+uint32_t omv_esp32_camera_get_pixformat(void) {
+    return camera_ctx.output_pixfmt;
+}
+
+bool omv_esp32_camera_set_framesize(uint32_t framesize) {
+    uint32_t width = 0;
+    uint32_t height = 0;
+
+    if (!omv_esp32_camera_framesize_to_dimensions(framesize, &width, &height)) {
+        return false;
+    }
+
+    mutex_lock(&camera_ctx.lock, MUTEX_TID_OMV);
+    if ((camera_ctx.width == width) && (camera_ctx.height == height)) {
+        mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+        return true;
+    }
+
+    camera_ctx.width = width;
+    camera_ctx.height = height;
+    if (camera_ctx.initialized && !omv_esp32_camera_reinit_ppa_locked()) {
+        mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+        return false;
+    }
+    mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+    return true;
 }
 
 uint32_t omv_esp32_camera_get_width(void) {
@@ -428,8 +525,14 @@ uint32_t omv_esp32_camera_get_id(void) {
 }
 
 bool omv_esp32_camera_set_hmirror(bool enable) {
-    (void) enable;
-    return false;
+    if (!omv_esp32_camera_is_ready()) {
+        return false;
+    }
+
+    mutex_lock(&camera_ctx.lock, MUTEX_TID_OMV);
+    camera_ctx.hmirror = enable;
+    mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+    return true;
 }
 
 bool omv_esp32_camera_get_hmirror(void) {
@@ -437,29 +540,39 @@ bool omv_esp32_camera_get_hmirror(void) {
 }
 
 bool omv_esp32_camera_set_vflip(bool enable) {
-    (void) enable;
-    return false;
+    if (!omv_esp32_camera_is_ready()) {
+        return false;
+    }
+
+    mutex_lock(&camera_ctx.lock, MUTEX_TID_OMV);
+    camera_ctx.vflip = enable;
+    mutex_unlock(&camera_ctx.lock, MUTEX_TID_OMV);
+    return true;
 }
 
 bool omv_esp32_camera_get_vflip(void) {
     return camera_ctx.vflip;
 }
 
-bool omv_esp32_camera_capture_rgb565(uint16_t *pixels, size_t pixel_count) {
+bool omv_esp32_camera_capture(uint8_t *pixels, size_t size) {
     struct v4l2_buffer buf;
     size_t expected_size;
     bool ok = false;
+    uint32_t output_pixfmt;
 
     if (!omv_esp32_camera_is_ready() || pixels == NULL) {
         return false;
     }
 
-    expected_size = (size_t) camera_ctx.width * (size_t) camera_ctx.height * sizeof(uint16_t);
-    if ((pixel_count * sizeof(uint16_t)) < expected_size) {
+    expected_size = (size_t) camera_ctx.width * (size_t) camera_ctx.height *
+                    omv_esp32_camera_output_bpp(camera_ctx.output_pixfmt);
+    if (size < expected_size) {
         return false;
     }
 
     mutex_lock(&camera_ctx.lock, MUTEX_TID_OMV);
+    output_pixfmt = camera_ctx.output_pixfmt;
+
     if (!omv_esp32_camera_dequeue_buffer(&buf)) {
         goto exit;
     }
@@ -479,10 +592,12 @@ bool omv_esp32_camera_capture_rgb565(uint16_t *pixels, size_t pixel_count) {
         .out.pic_h = camera_ctx.height,
         .out.block_offset_x = 0,
         .out.block_offset_y = 0,
-        .out.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        .out.srm_cm = omv_esp32_camera_output_color_mode(output_pixfmt),
         .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
         .scale_x = (float) camera_ctx.width / (float) camera_ctx.active_input_width,
         .scale_y = (float) camera_ctx.height / (float) camera_ctx.active_input_height,
+        .mirror_x = camera_ctx.hmirror,
+        .mirror_y = camera_ctx.vflip,
         .mode = PPA_TRANS_MODE_BLOCKING,
     };
 
