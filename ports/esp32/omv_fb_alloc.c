@@ -23,19 +23,65 @@ typedef struct _omv_fb_alloc_node_t {
 
 static omv_fb_alloc_node_t *omv_fb_alloc_head = NULL;
 
-static void *omv_fb_raw_alloc(size_t size) {
-    void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (ptr == NULL) {
-        ptr = heap_caps_malloc(size, MALLOC_CAP_8BIT);
+static void *omv_fb_raw_alloc_with_caps(size_t size, uint32_t caps) {
+    return heap_caps_malloc(size, caps);
+}
+
+static void *omv_fb_raw_alloc(size_t size, int hints) {
+    void *ptr = NULL;
+
+    if (hints & FB_ALLOC_PREFER_INTERNAL) {
+        ptr = omv_fb_raw_alloc_with_caps(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (ptr == NULL) {
+            ptr = omv_fb_raw_alloc_with_caps(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        }
+    } else if (hints & FB_ALLOC_PREFER_SIZE) {
+        ptr = omv_fb_raw_alloc_with_caps(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (ptr == NULL) {
+            ptr = omv_fb_raw_alloc_with_caps(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+    } else {
+        ptr = omv_fb_raw_alloc_with_caps(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (ptr == NULL) {
+            ptr = omv_fb_raw_alloc_with_caps(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
     }
+
+    if (ptr == NULL) {
+        ptr = omv_fb_raw_alloc_with_caps(size, MALLOC_CAP_8BIT);
+    }
+
     return ptr;
 }
 
-static size_t omv_fb_largest_free_block(void) {
-    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (largest == 0) {
-        largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+static size_t omv_fb_largest_free_block_with_caps(uint32_t caps) {
+    return heap_caps_get_largest_free_block(caps);
+}
+
+static size_t omv_fb_largest_free_block(int hints) {
+    size_t largest = 0;
+
+    if (hints & FB_ALLOC_PREFER_INTERNAL) {
+        largest = omv_fb_largest_free_block_with_caps(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (largest == 0) {
+            largest = omv_fb_largest_free_block_with_caps(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        }
+    } else if (hints & FB_ALLOC_PREFER_SIZE) {
+        largest = omv_fb_largest_free_block_with_caps(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (largest == 0) {
+            largest = omv_fb_largest_free_block_with_caps(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+    } else {
+        largest = omv_fb_largest_free_block_with_caps(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (largest == 0) {
+            largest = omv_fb_largest_free_block_with_caps(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
     }
+
+    if (largest == 0) {
+        largest = omv_fb_largest_free_block_with_caps(MALLOC_CAP_8BIT);
+    }
+
     return largest;
 }
 
@@ -56,7 +102,7 @@ void fb_alloc_init0() {
 }
 
 uint32_t fb_avail() {
-    size_t largest = omv_fb_largest_free_block();
+    size_t largest = omv_fb_largest_free_block(FB_ALLOC_PREFER_SIZE);
     if (largest <= OMV_ALLOC_ALIGNMENT) {
         return 0;
     }
@@ -117,14 +163,11 @@ void *fb_alloc(uint32_t size, int hints) {
     }
 
     omv_fb_alloc_node_t *node = m_new_obj(omv_fb_alloc_node_t);
-    uint32_t alloc_size = size;
+    uint32_t alloc_size = OMV_ALIGN_TO(size, OMV_ALLOC_ALIGNMENT);
+    alloc_size += OMV_ALLOC_ALIGNMENT - 1;
     node->prev = omv_fb_alloc_head;
-    if (hints & FB_ALLOC_CACHE_ALIGN) {
-        alloc_size = OMV_ALIGN_TO(size, OMV_ALLOC_ALIGNMENT);
-        alloc_size += OMV_ALLOC_ALIGNMENT - 1;
-    }
 
-    node->raw_ptr = omv_fb_raw_alloc(alloc_size);
+    node->raw_ptr = omv_fb_raw_alloc(alloc_size, hints);
     node->ptr = node->raw_ptr;
     node->size = size;
     node->mark = 0;
@@ -135,10 +178,8 @@ void *fb_alloc(uint32_t size, int hints) {
         omv_fb_alloc_oom();
     }
 
-    if (hints & FB_ALLOC_CACHE_ALIGN) {
-        uintptr_t aligned = OMV_ALIGN_TO((uintptr_t) node->raw_ptr, OMV_ALLOC_ALIGNMENT);
-        node->ptr = (void *) aligned;
-    }
+    uintptr_t aligned = OMV_ALIGN_TO((uintptr_t) node->raw_ptr, OMV_ALLOC_ALIGNMENT);
+    node->ptr = (void *) aligned;
 
     omv_fb_alloc_head = node;
     return node->ptr;
@@ -153,7 +194,7 @@ void *fb_alloc0(uint32_t size, int hints) {
 }
 
 void *fb_alloc_all(uint32_t *size, int hints) {
-    size_t largest = omv_fb_largest_free_block();
+    size_t largest = omv_fb_largest_free_block(hints);
     size_t reserve = 32 * 1024;
 
     if (largest <= (reserve + OMV_ALLOC_ALIGNMENT)) {
@@ -178,7 +219,11 @@ void *fb_alloc_all(uint32_t *size, int hints) {
 }
 
 void *fb_alloc0_all(uint32_t *size, int hints) {
-    return fb_alloc_all(size, hints);
+    void *mem = fb_alloc_all(size, hints);
+    if ((mem != NULL) && (*size != 0)) {
+        memset(mem, 0, *size);
+    }
+    return mem;
 }
 
 void fb_free() {

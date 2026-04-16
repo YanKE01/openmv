@@ -5350,10 +5350,11 @@ static mp_obj_t py_image_find_apriltags(size_t n_args, const mp_obj_t *args, mp_
     float cx = py_helper_keyword_float(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_cx), arg_img->w * 0.5);
     // Use the image versus the roi here since the image should be projected from the camera center.
     float cy = py_helper_keyword_float(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_cy), arg_img->h * 0.5);
+    bool pose = py_helper_keyword_int(n_args, args, 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_pose), true);
 
     list_t out;
     fb_alloc_mark();
-    imlib_find_apriltags(&out, arg_img, &roi, families, fx, fy, cx, cy);
+    imlib_find_apriltags(&out, arg_img, &roi, families, fx, fy, cx, cy, pose);
     fb_alloc_free_till_mark();
 
     mp_obj_list_t *objects_list = mp_obj_new_list(list_size(&out), NULL);

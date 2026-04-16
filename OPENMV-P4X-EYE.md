@@ -14,11 +14,12 @@
       - [2.3.3 Frame Difference](#233-frame-difference)
     - [2.4 Barcodes API Test](#24-barcodes-api-test)
     - [2.5 Feature Detection](#25-feature-detection)
-  - [3. Wi-Fi](#3-wi-fi)
-    - [3.1 Wi-Fi Image Preview](#31-wi-fi-image-preview)
-  - [4. Other](#4-other)
-    - [4.1 Peripheral Support](#41-peripheral-support)
-      - [4.1.1 LCD Support](#411-lcd-support)
+  - [3. April-Tags](#3-april-tags)
+  - [4. Wi-Fi](#4-wi-fi)
+    - [4.1 Wi-Fi Image Preview](#41-wi-fi-image-preview)
+  - [5. Other](#5-other)
+    - [5.1 Peripheral Support](#51-peripheral-support)
+      - [5.1.1 LCD Support](#511-lcd-support)
 
 ## 1. Camera Test
 
@@ -268,27 +269,47 @@ while True:
 
 ### 2.4 Barcodes API Test
 
-> Note: Only QR code recognition is currently supported.
+```python
+import sensor
+import time
+
+sensor.reset()
+sensor.set_pixformat(sensor.RGB565)
+sensor.set_framesize(sensor.QVGA)
+sensor.skip_frames(time=1000)
+
+while True:
+    img = sensor.snapshot()
+    codes = img.find_qrcodes()
+
+    for code in codes:
+        img.draw_rectangle(code.rect(), color=(255, 0, 0), thickness=2)
+        print("payload:", code.payload())
+
+    img.flush()
+    time.sleep_ms(20)
+
+```
 
 ```python
-  import sensor
-  import time
+import sensor
+import time
 
-  sensor.reset()
-  sensor.set_pixformat(sensor.RGB565)
-  sensor.set_framesize(sensor.QVGA)
-  sensor.skip_frames(time=1000)
+sensor.reset()
+sensor.set_pixformat(sensor.GRAYSCALE)
+sensor.set_framesize(sensor.QVGA)
+sensor.skip_frames(time=1000)
 
-  while True:
-      img = sensor.snapshot()
-      codes = img.find_qrcodes()
+while True:
+    img = sensor.snapshot()
+    codes = img.find_barcodes()
 
-      for code in codes:
-          img.draw_rectangle(code.rect(), color=(255, 0, 0), thickness=2)
-          print("payload:", code.payload())
+    for code in codes:
+        img.draw_rectangle(code.rect(), color=255, thickness=2)
+        print("payload:", code.payload(), "type:", code.type())
 
-      img.flush()
-      time.sleep_ms(20)
+    img.flush()
+    time.sleep_ms(20)
 
 ```
 
@@ -314,9 +335,38 @@ while True:
 
 ```
 
-## 3. Wi-Fi
+## 3. April-Tags
 
-### 3.1 Wi-Fi Image Preview
+```python
+import sensor
+import image
+import time
+
+sensor.reset()
+sensor.set_pixformat(sensor.GRAYSCALE)
+sensor.set_framesize(sensor.QQVGA)
+sensor.skip_frames(time=1000)
+
+clock = time.clock()
+
+while True:
+    clock.tick()
+    img = sensor.snapshot()
+    tags = img.find_apriltags(families=image.TAG36H11, pose=False)
+
+    for tag in tags:
+        img.draw_rectangle(tag.rect, color=255, thickness=2)
+        img.draw_cross(tag.cx, tag.cy, color=255, size=10, thickness=2)
+        print("id:", tag.id, "fps:", clock.fps())
+
+    img.flush()
+    time.sleep_ms(10)
+
+```
+
+## 4. Wi-Fi
+
+### 4.1 Wi-Fi Image Preview
 
 ```python
 import sensor
@@ -424,11 +474,11 @@ while True:
 ```
 
 
-## 4. Other
+## 5. Other
 
-### 4.1 Peripheral Support
+### 5.1 Peripheral Support
 
-#### 4.1.1 LCD Support
+#### 5.1.1 LCD Support
 
 ```python
 import sensor
