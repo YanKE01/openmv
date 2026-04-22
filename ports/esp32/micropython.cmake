@@ -60,6 +60,9 @@ list(APPEND OMV_ESP32_EXTRA_SOURCES
     "${OMV_TOP_DIR}/ports/esp32/omv_camera.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_gpio.c"
     "${OMV_TOP_DIR}/ports/esp32/omv_sdcard.c"
+    "${OMV_TOP_DIR}/boards/${MICROPY_BOARD}/omv_camera_board.c"
+    "${OMV_TOP_DIR}/boards/${MICROPY_BOARD}/omv_display_board.c"
+    "${OMV_TOP_DIR}/boards/${MICROPY_BOARD}/omv_sdcard_board.c"
     "${OMV_TOP_DIR}/ports/esp32/py_sensor.c"
 )
 

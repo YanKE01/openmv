@@ -10,68 +10,17 @@
 
 #include <string.h>
 
-#include "driver/gpio.h"
-#include "driver/ledc.h"
 #include "driver/spi_master.h"
-#include "esp_check.h"
 #include "esp_heap_caps.h"
-#include "esp_lcd_io_spi.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_vendor.h"
 
-#include "py/mphal.h"
 #include "py/runtime.h"
 
 #include "fb_alloc.h"
+#include "omv_board.h"
 #include "py_display.h"
 #include "py_helper.h"
-
-#define OMV_ESP32_LCD_H_RES             (240)
-#define OMV_ESP32_LCD_V_RES             (240)
-#define OMV_ESP32_LCD_PIXEL_CLOCK_HZ    (80 * 1000 * 1000)
-#define OMV_ESP32_LCD_SPI_HOST          (SPI2_HOST)
-#define OMV_ESP32_LCD_PIN_MOSI          (GPIO_NUM_16)
-#define OMV_ESP32_LCD_PIN_CLK           (GPIO_NUM_17)
-#define OMV_ESP32_LCD_PIN_CS            (GPIO_NUM_18)
-#define OMV_ESP32_LCD_PIN_DC            (GPIO_NUM_19)
-#define OMV_ESP32_LCD_PIN_RST           (GPIO_NUM_15)
-#define OMV_ESP32_LCD_PIN_BL            (GPIO_NUM_20)
-
-#define OMV_ESP32_LCD_CMD_BITS          (8)
-#define OMV_ESP32_LCD_PARAM_BITS        (8)
-#define OMV_ESP32_LCD_BPP               (16)
-#define OMV_ESP32_LCD_BRIGHTNESS_CH     (LEDC_CHANNEL_0)
-#define OMV_ESP32_LCD_BRIGHTNESS_TIMER  (LEDC_TIMER_0)
-
-typedef struct {
-    int cmd;
-    const uint8_t data[16];
-    size_t data_bytes;
-    uint32_t delay_ms;
-} omv_esp32_lcd_init_cmd_t;
-
-static const omv_esp32_lcd_init_cmd_t omv_esp32_lcd_init_seq[] = {
-    {0x11, {0x00}, 1, 120},
-    {0xB2, {0x0C, 0x0C, 0x00, 0x33, 0x33}, 5, 0},
-    {0x35, {0x00}, 1, 0},
-    {0x36, {0x00}, 1, 0},
-    {0x3A, {0x05}, 1, 0},
-    {0xB7, {0x35}, 1, 0},
-    {0xBB, {0x2D}, 1, 0},
-    {0xC0, {0x2C}, 1, 0},
-    {0xC2, {0x01}, 1, 0},
-    {0xC3, {0x15}, 1, 0},
-    {0xC4, {0x20}, 1, 0},
-    {0xC6, {0x0F}, 1, 0},
-    {0xD0, {0xA4, 0xA1}, 2, 0},
-    {0xD6, {0xA1}, 1, 0},
-    {0xE0, {0x70, 0x05, 0x0A, 0x0B, 0x0A, 0x27, 0x2F, 0x44, 0x47, 0x37, 0x14, 0x14, 0x29, 0x2F}, 14, 0},
-    {0xE1, {0x70, 0x07, 0x0C, 0x08, 0x08, 0x04, 0x2F, 0x33, 0x46, 0x18, 0x15, 0x15, 0x2B, 0x2D}, 14, 0},
-    {0x21, {0x00}, 1, 0},
-    {0x29, {0x00}, 1, 0},
-    {0x2C, {0x00}, 1, 0},
-};
 
 typedef struct _py_esp32_display_obj_t {
     py_display_obj_t base_obj;
@@ -81,46 +30,9 @@ typedef struct _py_esp32_display_obj_t {
     uint16_t *framebuffer;
 } py_esp32_display_obj_t;
 
-static bool omv_esp32_display_brightness_inited = false;
-
-static void omv_esp32_display_brightness_init(void) {
-    if (omv_esp32_display_brightness_inited) {
-        return;
-    }
-
-    ledc_timer_config_t timer_cfg = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = LEDC_TIMER_10_BIT,
-        .timer_num = OMV_ESP32_LCD_BRIGHTNESS_TIMER,
-        .freq_hz = 5000,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    ledc_channel_config_t channel_cfg = {
-        .gpio_num = OMV_ESP32_LCD_PIN_BL,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = OMV_ESP32_LCD_BRIGHTNESS_CH,
-        .timer_sel = OMV_ESP32_LCD_BRIGHTNESS_TIMER,
-        .duty = 0,
-        .hpoint = 0,
-        .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
-        .flags.output_invert = true,
-    };
-
-    if (ledc_timer_config(&timer_cfg) != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display backlight timer init failed"));
-    }
-    if (ledc_channel_config(&channel_cfg) != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display backlight channel init failed"));
-    }
-
-    omv_esp32_display_brightness_inited = true;
-}
-
 static void omv_esp32_display_set_backlight(py_display_obj_t *self_in, uint32_t intensity) {
     (void) self_in;
-    uint32_t duty = (1023U * intensity) / 100U;
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, OMV_ESP32_LCD_BRIGHTNESS_CH, duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, OMV_ESP32_LCD_BRIGHTNESS_CH);
+    omv_esp32_board_display_set_backlight(intensity);
 }
 
 static void omv_esp32_display_draw(py_esp32_display_obj_t *self, image_t *src_img, int dst_x_start, int dst_y_start,
@@ -186,57 +98,6 @@ static void omv_esp32_display_deinit(py_display_obj_t *self_in) {
     spi_bus_free(self->spi_host);
 }
 
-static void omv_esp32_display_init_panel(py_esp32_display_obj_t *self) {
-    spi_bus_config_t buscfg = {
-        .sclk_io_num = OMV_ESP32_LCD_PIN_CLK,
-        .mosi_io_num = OMV_ESP32_LCD_PIN_MOSI,
-        .miso_io_num = GPIO_NUM_NC,
-        .quadwp_io_num = GPIO_NUM_NC,
-        .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = self->base_obj.width * 20 * sizeof(uint16_t),
-    };
-    esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = OMV_ESP32_LCD_PIN_DC,
-        .cs_gpio_num = OMV_ESP32_LCD_PIN_CS,
-        .pclk_hz = OMV_ESP32_LCD_PIXEL_CLOCK_HZ,
-        .lcd_cmd_bits = OMV_ESP32_LCD_CMD_BITS,
-        .lcd_param_bits = OMV_ESP32_LCD_PARAM_BITS,
-        .spi_mode = 3,
-        .trans_queue_depth = 2,
-    };
-    esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = OMV_ESP32_LCD_PIN_RST,
-        .color_space = ESP_LCD_COLOR_SPACE_RGB,
-        .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
-        .bits_per_pixel = OMV_ESP32_LCD_BPP,
-    };
-
-    if (spi_bus_initialize(self->spi_host, &buscfg, SPI_DMA_CH_AUTO) != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display spi init failed"));
-    }
-    if (esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t) self->spi_host, &io_config, &self->io_handle) != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display panel io init failed"));
-    }
-    if (esp_lcd_new_panel_st7789(self->io_handle, &panel_config, &self->panel_handle) != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display panel init failed"));
-    }
-
-    for (size_t i = 0; i < MP_ARRAY_SIZE(omv_esp32_lcd_init_seq); i++) {
-        const omv_esp32_lcd_init_cmd_t *cmd = &omv_esp32_lcd_init_seq[i];
-        if (esp_lcd_panel_io_tx_param(self->io_handle, cmd->cmd, cmd->data, cmd->data_bytes) != ESP_OK) {
-            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display init sequence failed"));
-        }
-        if (cmd->delay_ms != 0U) {
-            mp_hal_delay_ms(cmd->delay_ms);
-        }
-    }
-
-    esp_lcd_panel_reset(self->panel_handle);
-    esp_lcd_panel_init(self->panel_handle);
-    esp_lcd_panel_invert_color(self->panel_handle, true);
-    esp_lcd_panel_disp_on_off(self->panel_handle, true);
-}
-
 static mp_obj_t omv_esp32_display_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum {
         ARG_width,
@@ -272,7 +133,7 @@ static mp_obj_t omv_esp32_display_make_new(const mp_obj_type_t *type, size_t n_a
     self->base_obj.byte_swap = false;
     self->base_obj.controller = mp_const_none;
     self->base_obj.bl_controller = mp_const_none;
-    self->spi_host = OMV_ESP32_LCD_SPI_HOST;
+    self->spi_host = (spi_host_device_t) OMV_ESP32_LCD_SPI_HOST;
 
     self->framebuffer = heap_caps_aligned_alloc(16,
                                                 self->base_obj.width * self->base_obj.height * sizeof(uint16_t),
@@ -287,8 +148,13 @@ static mp_obj_t omv_esp32_display_make_new(const mp_obj_type_t *type, size_t n_a
     }
     memset(self->framebuffer, 0, self->base_obj.width * self->base_obj.height * sizeof(uint16_t));
 
-    omv_esp32_display_brightness_init();
-    omv_esp32_display_init_panel(self);
+    if (omv_esp32_board_display_brightness_init() != ESP_OK) {
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display backlight init failed"));
+    }
+    if (omv_esp32_board_display_init_panel(self->spi_host, self->base_obj.width, self->base_obj.height,
+                                           &self->io_handle, &self->panel_handle) != ESP_OK) {
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display panel init failed"));
+    }
     omv_esp32_display_set_backlight(&self->base_obj, self->base_obj.intensity);
     omv_esp32_display_draw(self, NULL, 0, 0, 1.0f, 1.0f, NULL, -1, 255, NULL, NULL, 0);
 
