@@ -9654,10 +9654,6 @@ int quad_segment_maxima(apriltag_detector_t *td, zarray_t *cluster, struct line_
         fb_free(); // maxima_errs_copy
     }
 
-    fb_free(); // maxima_errs
-    fb_free(); // maxima
-    fb_free(); // errs
-
     int best_indices[4];
     float best_error = HUGE_VALF;
 
@@ -9714,11 +9710,19 @@ int quad_segment_maxima(apriltag_detector_t *td, zarray_t *cluster, struct line_
         }
     }
 
-    if (best_error == HUGE_VALF)
+    if (best_error == HUGE_VALF) {
+        fb_free(); // maxima_errs
+        fb_free(); // maxima
+        fb_free(); // errs
         return 0;
+    }
 
     for (int i = 0; i < 4; i++)
         indices[i] = best_indices[i];
+
+    fb_free(); // maxima_errs
+    fb_free(); // maxima
+    fb_free(); // errs
 
     if (best_error / sz < td->qtp.max_line_fit_mse)
         return 1;
