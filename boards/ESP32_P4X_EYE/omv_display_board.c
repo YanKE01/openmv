@@ -3,6 +3,7 @@
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "driver/spi_master.h"
 #include "esp_lcd_io_spi.h"
 #include "esp_lcd_panel_vendor.h"
 #include "freertos/FreeRTOS.h"
@@ -81,9 +82,10 @@ void omv_esp32_board_display_set_backlight(uint32_t intensity) {
     ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t) OMV_ESP32_LCD_BRIGHTNESS_CH);
 }
 
-esp_err_t omv_esp32_board_display_init_panel(spi_host_device_t spi_host, int width, int height,
+esp_err_t omv_esp32_board_display_init_panel(int width, int height,
                                              esp_lcd_panel_io_handle_t *io_handle,
                                              esp_lcd_panel_handle_t *panel_handle) {
+    spi_host_device_t spi_host = (spi_host_device_t) OMV_ESP32_LCD_SPI_HOST;
     spi_bus_config_t buscfg = {
         .sclk_io_num = OMV_ESP32_LCD_PIN_CLK,
         .mosi_io_num = OMV_ESP32_LCD_PIN_MOSI,
@@ -145,4 +147,16 @@ esp_err_t omv_esp32_board_display_init_panel(spi_host_device_t spi_host, int wid
         return ret;
     }
     return esp_lcd_panel_disp_on_off(*panel_handle, true);
+}
+
+void omv_esp32_board_display_deinit_panel(esp_lcd_panel_io_handle_t io_handle,
+                                           esp_lcd_panel_handle_t panel_handle) {
+    if (panel_handle != NULL) {
+        esp_lcd_panel_disp_on_off(panel_handle, false);
+        esp_lcd_panel_del(panel_handle);
+    }
+    if (io_handle != NULL) {
+        esp_lcd_panel_io_del(io_handle);
+    }
+    spi_bus_free((spi_host_device_t) OMV_ESP32_LCD_SPI_HOST);
 }

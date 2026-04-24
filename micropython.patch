@@ -1,0 +1,1134 @@
+From 51074c57620c5a53f270e942185ee8113834abb6 Mon Sep 17 00:00:00 2001
+From: yanke <yanke2@espressif.com>
+Date: Wed, 1 Apr 2026 17:08:17 +0800
+Subject: [PATCH 1/6] feat: add esp32 p4x eye
+
+---
+ ports/esp32/.gitignore                        |  2 ++
+ ports/esp32/boards/ESP32_P4X_EYE/board.json   | 18 +++++++++++
+ ports/esp32/boards/ESP32_P4X_EYE/board.md     |  7 +++++
+ .../boards/ESP32_P4X_EYE/mpconfigboard.cmake  |  6 ++++
+ .../boards/ESP32_P4X_EYE/mpconfigboard.h      | 31 +++++++++++++++++++
+ ports/esp32/boards/sdkconfig.p4x_eye          | 27 ++++++++++++++++
+ .../esp32/lockfiles/dependencies.lock.esp32p4 |  2 +-
+ 7 files changed, 92 insertions(+), 1 deletion(-)
+ create mode 100644 ports/esp32/boards/ESP32_P4X_EYE/board.json
+ create mode 100644 ports/esp32/boards/ESP32_P4X_EYE/board.md
+ create mode 100644 ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
+ create mode 100644 ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
+ create mode 100644 ports/esp32/boards/sdkconfig.p4x_eye
+
+diff --git a/ports/esp32/.gitignore b/ports/esp32/.gitignore
+index 9c708bb85..b814d832d 100644
+--- a/ports/esp32/.gitignore
++++ b/ports/esp32/.gitignore
+@@ -1 +1,3 @@
+ managed_components/
++lockfiles/dependencies.lock.esp32p4
++
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/board.json b/ports/esp32/boards/ESP32_P4X_EYE/board.json
+new file mode 100644
+index 000000000..26fc96580
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_EYE/board.json
+@@ -0,0 +1,18 @@
++{
++    "deploy": [
++        "../deploy.md"
++    ],
++    "deploy_options": {
++        "flash_offset": "0x2000"
++    },
++    "docs": "",
++    "features": [
++        "ISP",
++        "MIPI_CSI"
++    ],
++    "mcu": "esp32p4",
++    "product": "ESP32-P4X-EYE",
++    "thumbnail": "",
++    "url": "https://www.espressif.com/en/products/modules",
++    "vendor": "Espressif"
++}
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/board.md b/ports/esp32/boards/ESP32_P4X_EYE/board.md
+new file mode 100644
+index 000000000..ee602ea01
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_EYE/board.md
+@@ -0,0 +1,7 @@
++The following firmware is applicable to most development boards based on ESP32-P4, and
++the development boards must be equipped with at least 16 MiB external SPI Flash.
++
++This board has multiple variants available:
++
++* If your board has a standalone ESP32-P4 processor (or the board has a coprocessor but
++  you do not want to use it) then choose the generic variant (first heading below).
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
+new file mode 100644
+index 000000000..b3cfa0f3a
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
+@@ -0,0 +1,6 @@
++set(IDF_TARGET esp32p4)
++
++set(SDKCONFIG_DEFAULTS
++    boards/sdkconfig.base
++    boards/sdkconfig.p4x_eye
++)
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
+new file mode 100644
+index 000000000..c05f0a374
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
+@@ -0,0 +1,31 @@
++// Both of these can be set by mpconfigboard.cmake if a BOARD_VARIANT is
++// specified.
++
++#ifndef MICROPY_HW_BOARD_NAME
++#define MICROPY_HW_BOARD_NAME "ESP32 P4X EYE"
++#endif
++
++#ifndef MICROPY_HW_MCU_NAME
++#define MICROPY_HW_MCU_NAME "ESP32P4"
++#endif
++
++#define MICROPY_PY_ESPNOW                (0)
++
++#define MICROPY_HW_ENABLE_SDCARD            (1)
++
++#ifndef USB_SERIAL_JTAG_PACKET_SZ_BYTES
++#define USB_SERIAL_JTAG_PACKET_SZ_BYTES (64)
++#endif
++
++// Enable UART REPL for modules that have an external USB-UART and don't use native USB.
++#define MICROPY_HW_ENABLE_UART_REPL     (1)
++
++#define MICROPY_PY_MACHINE_I2S          (1)
++
++// Disable Wi-Fi and Bluetooth by default, these are re-enabled in the WIFI variants
++#ifndef MICROPY_PY_NETWORK_WLAN
++#define MICROPY_PY_NETWORK_WLAN         (0)
++#endif
++#ifndef MICROPY_PY_BLUETOOTH
++#define MICROPY_PY_BLUETOOTH            (0)
++#endif
+diff --git a/ports/esp32/boards/sdkconfig.p4x_eye b/ports/esp32/boards/sdkconfig.p4x_eye
+new file mode 100644
+index 000000000..677ad5776
+--- /dev/null
++++ b/ports/esp32/boards/sdkconfig.p4x_eye
+@@ -0,0 +1,27 @@
++# Select the minimum chip revision to cover all possible boards.
++CONFIG_ESP32P4_REV_MIN_0=y
++
++# Flash
++CONFIG_FLASHMODE_QIO=y
++CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
++
++# Memory
++CONFIG_SPIRAM=y
++CONFIG_SPIRAM_MEMTEST=
++CONFIG_SPIRAM_IGNORE_NOTFOUND=y
++CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y
++CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=50768
++CONFIG_SPIRAM_SPEED_250M=y
++CONFIG_IDF_EXPERIMENTAL_FEATURES=y
++
++# ULP: not fixed
++CONFIG_SOC_ULP_SUPPORTED=n
++CONFIG_ULP_COPROC_ENABLED=n
++CONFIG_ULP_COPROC_TYPE_FSM=n
++
++# SOC
++CONFIG_CACHE_L2_CACHE_256KB=y
++CONFIG_CACHE_L2_CACHE_LINE_128B=y
++
++# FreeRtos
++CONFIG_FREERTOS_HZ=1000
+diff --git a/ports/esp32/lockfiles/dependencies.lock.esp32p4 b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+index aea6ec2cc..090884719 100644
+--- a/ports/esp32/lockfiles/dependencies.lock.esp32p4
++++ b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+@@ -81,7 +81,7 @@ dependencies:
+   idf:
+     source:
+       type: idf
+-    version: 5.5.1
++    version: 5.5.3
+ direct_dependencies:
+ - espressif/esp_hosted
+ - espressif/esp_wifi_remote
+-- 
+2.34.1
+
+
+From 928da12524633cbf60f8c23ffb53f21e9b7bf235 Mon Sep 17 00:00:00 2001
+From: yanke <yanke2@espressif.com>
+Date: Wed, 8 Apr 2026 13:09:50 +0800
+Subject: [PATCH 2/6] feat: support omv ide
+
+---
+ ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake |  1 +
+ ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h     |  9 +++++++++
+ .../boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv | 12 ++++++++++++
+ ports/esp32/boards/ESP32_P4X_EYE/sdkconfig.board     |  3 +++
+ ports/esp32/esp32_common.cmake                       | 10 ++++++++++
+ shared/tinyusb/tusb_config.h                         | 10 ++++++++++
+ 6 files changed, 45 insertions(+)
+ create mode 100644 ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv
+ create mode 100644 ports/esp32/boards/ESP32_P4X_EYE/sdkconfig.board
+
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
+index b3cfa0f3a..7d2dbe889 100644
+--- a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
++++ b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
+@@ -3,4 +3,5 @@ set(IDF_TARGET esp32p4)
+ set(SDKCONFIG_DEFAULTS
+     boards/sdkconfig.base
+     boards/sdkconfig.p4x_eye
++    boards/ESP32_P4X_EYE/sdkconfig.board
+ )
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
+index c05f0a374..0439200e0 100644
+--- a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
++++ b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
+@@ -9,6 +9,15 @@
+ #define MICROPY_HW_MCU_NAME "ESP32P4"
+ #endif
+ 
++#define MICROPY_WRAP_TUD_CDC_RX_CB(name) __mp_##name
++#define MICROPY_WRAP_TUD_EVENT_HOOK_CB(name) __mp_##name
++
++#define MICROPY_HW_USB_VID 0x37C5
++#define MICROPY_HW_USB_PID 0x1206
++#define MICROPY_HW_USB_MANUFACTURER_STRING "OpenMV"
++#define MICROPY_HW_USB_PRODUCT_FS_STRING "OpenMV Virtual Comm Port in HS Mode"
++#define MICROPY_HW_USB_CDC_INTERFACE_STRING "OpenMV CDC"
++
+ #define MICROPY_PY_ESPNOW                (0)
+ 
+ #define MICROPY_HW_ENABLE_SDCARD            (1)
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv b/ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv
+new file mode 100644
+index 000000000..f3a19bc55
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv
+@@ -0,0 +1,12 @@
++# OpenMV ESP32P4 16MiB flash partition table.
++# Keep a single large factory app partition and let MicroPython auto-register
++# the remaining flash as the "vfs" FAT filesystem at boot.
++#
++# 16MiB flash end: 0x1000000
++# factory end:     0x710000
++# auto-vfs size:   0x8F0000 (~8.9MiB)
++#
++# Name,   Type, SubType, Offset,  Size, Flags
++nvs,      data, nvs,     0x9000,  0x6000,
++phy_init, data, phy,     0xf000,  0x1000,
++factory,  app,  factory, 0x10000, 0x700000,
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/sdkconfig.board b/ports/esp32/boards/ESP32_P4X_EYE/sdkconfig.board
+new file mode 100644
+index 000000000..28e300311
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_EYE/sdkconfig.board
+@@ -0,0 +1,3 @@
++CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
++CONFIG_PARTITION_TABLE_CUSTOM=y
++CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv"
+diff --git a/ports/esp32/esp32_common.cmake b/ports/esp32/esp32_common.cmake
+index e3b1b81ca..e3e48dc9c 100644
+--- a/ports/esp32/esp32_common.cmake
++++ b/ports/esp32/esp32_common.cmake
+@@ -146,6 +146,10 @@ list(APPEND MICROPY_SOURCE_PORT
+     modespnow.c
+ )
+ list(TRANSFORM MICROPY_SOURCE_PORT PREPEND ${MICROPY_PORT_DIR}/)
++if(DEFINED OMV_ESP32_PORT_MAIN)
++    list(REMOVE_ITEM MICROPY_SOURCE_PORT ${MICROPY_PORT_DIR}/main.c)
++    list(APPEND MICROPY_SOURCE_PORT ${OMV_ESP32_PORT_MAIN})
++endif()
+ list(APPEND MICROPY_SOURCE_PORT ${CMAKE_BINARY_DIR}/pins.c)
+ 
+ list(APPEND MICROPY_SOURCE_QSTR
+@@ -300,6 +304,12 @@ target_link_options(${MICROPY_TARGET} PUBLIC
+   -Wl,--undefined=esp_panic_handler
+   -Wl,--wrap=esp_panic_handler
+ )
++if(DEFINED OMV_ESP32_PORT_MAIN)
++    target_link_options(${MICROPY_TARGET} PUBLIC
++      -Wl,--wrap=mp_hal_stdio_poll
++      -Wl,--wrap=mp_hal_stdout_tx_strn
++    )
++endif()
+ 
+ # Collect all of the include directories and compile definitions for the IDF components,
+ # including those added by the IDF Component Manager via idf_components.yaml.
+diff --git a/shared/tinyusb/tusb_config.h b/shared/tinyusb/tusb_config.h
+index 8abd02154..b192a6b8b 100644
+--- a/shared/tinyusb/tusb_config.h
++++ b/shared/tinyusb/tusb_config.h
+@@ -31,6 +31,16 @@
+ 
+ #if MICROPY_HW_ENABLE_USBDEV
+ 
++#if defined(ESP_PLATFORM)
++#ifndef CFG_TUSB_OS
++#define CFG_TUSB_OS OPT_OS_FREERTOS
++#endif
++
++#ifndef CFG_TUSB_OS_INC_PATH
++#define CFG_TUSB_OS_INC_PATH freertos/
++#endif
++#endif
++
+ #ifndef MICROPY_HW_ENABLE_USB_RUNTIME_DEVICE
+ #define MICROPY_HW_ENABLE_USB_RUNTIME_DEVICE 0
+ #endif
+-- 
+2.34.1
+
+
+From 1651d813d0c17232904c14186a4fe9b8e503bda1 Mon Sep 17 00:00:00 2001
+From: yanke <yanke2@espressif.com>
+Date: Wed, 8 Apr 2026 18:59:10 +0800
+Subject: [PATCH 3/6] feat: support camera and basic openmv algorithm
+
+---
+ ports/esp32/boards/sdkconfig.p4x_eye          |   7 +
+ ports/esp32/esp32_common.cmake                |   5 +
+ .../esp32/lockfiles/dependencies.lock.esp32p4 | 144 +++++++++++++++++-
+ ports/esp32/machine_sdcard.c                  |   9 ++
+ ports/esp32/main/idf_component.yml            |   4 +
+ ports/esp32/qstrdefsport.h                    |  32 ++++
+ 6 files changed, 198 insertions(+), 3 deletions(-)
+
+diff --git a/ports/esp32/boards/sdkconfig.p4x_eye b/ports/esp32/boards/sdkconfig.p4x_eye
+index 677ad5776..725a44928 100644
+--- a/ports/esp32/boards/sdkconfig.p4x_eye
++++ b/ports/esp32/boards/sdkconfig.p4x_eye
+@@ -25,3 +25,10 @@ CONFIG_CACHE_L2_CACHE_LINE_128B=y
+ 
+ # FreeRtos
+ CONFIG_FREERTOS_HZ=1000
++
++# Camera
++CONFIG_CAMERA_OV2710=y
++CONFIG_CAMERA_OV2710_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
++CONFIG_CAMERA_OV2710_MIPI_RAW10_1280X720_25FPS=y
++CONFIG_CAMERA_OV2710_MIPI_DEFAULT_FMT_RAW10_1280X720_25FPS=y
++CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y
+diff --git a/ports/esp32/esp32_common.cmake b/ports/esp32/esp32_common.cmake
+index e3e48dc9c..b4b1c23d2 100644
+--- a/ports/esp32/esp32_common.cmake
++++ b/ports/esp32/esp32_common.cmake
+@@ -169,6 +169,11 @@ list(APPEND IDF_COMPONENTS
+     bt
+     driver
+     esp_adc
++    esp_driver_ppa
++    esp_driver_jpeg
++    esp_driver_gpio
++    esp_driver_ledc
++    esp_lcd
+     esp_app_format
+     esp_mm
+     esp_common
+diff --git a/ports/esp32/lockfiles/dependencies.lock.esp32p4 b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+index 090884719..6b1c0004a 100644
+--- a/ports/esp32/lockfiles/dependencies.lock.esp32p4
++++ b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+@@ -1,6 +1,16 @@
+ dependencies:
++  espressif/cmake_utilities:
++    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.1'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 0.5.3
+   espressif/eppp_link:
+-    component_hash: 41f6519edda527ec6a0553c872ebaf8fc6d3812523c9d4c8d1660ad21c720abe
++    component_hash: 9472e6825f4bb71eca2b39cf1bc92659c1ac60bfd7416560ad033a7dd8641b17
+     dependencies:
+     - name: espressif/esp_serial_slave_link
+       registry_url: https://components.espressif.com
+@@ -12,7 +22,42 @@ dependencies:
+     source:
+       registry_url: https://components.espressif.com
+       type: service
+-    version: 1.1.3
++    version: 1.1.4
++  espressif/esp_cam_sensor:
++    component_hash: 902c305b77f7c42b60fff5a084e397694f8a3fd6e6b72299996a7c856666e983
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_sccb_intf
++      registry_url: https://components.espressif.com
++      require: private
++      version: '>=0.0.5'
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    targets:
++    - esp32p4
++    - esp32s3
++    - esp32c3
++    - esp32c5
++    - esp32c6
++    - esp32c61
++    version: 2.0.1
++  espressif/esp_h264:
++    component_hash: fa5daaebc8a304f0b79bc57e51aab43e0a03eabc2ba3865bff4063c56b5d4564
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.4'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 1.0.4
+   espressif/esp_hosted:
+     component_hash: 53544436deb5fcbfdbf4a8e2c643cdbe31126556781784278c016d674df99cd2
+     dependencies:
+@@ -23,6 +68,32 @@ dependencies:
+       registry_url: https://components.espressif.com/
+       type: service
+     version: 2.7.0
++  espressif/esp_ipa:
++    component_hash: 31003e536f0d26158e10d7fcf2448b6377ce1148518287d0f34ed3b6c942c6d8
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=5.4'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    targets:
++    - esp32p4
++    version: 1.3.1
++  espressif/esp_sccb_intf:
++    component_hash: c071b189e49f40940722aea01a5489f873385cc39cd5b14012341135b85d1a9d
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 0.0.8
+   espressif/esp_serial_slave_link:
+     component_hash: ac1776806de0a6e371c84e87898bb983e19ce62aa7f1e2e5c4a3b0234a575d2c
+     dependencies:
+@@ -33,6 +104,49 @@ dependencies:
+       registry_url: https://components.espressif.com
+       type: service
+     version: 1.1.2
++  espressif/esp_video:
++    component_hash: 9e0c8cb6d9db3a27229fd8710831e868031bad1762fa12dab17f07c36d519467
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_cam_sensor
++      registry_url: https://components.espressif.com
++      require: private
++      version: 2.0.*
++    - name: espressif/esp_h264
++      registry_url: https://components.espressif.com
++      require: private
++      rules:
++      - if: target in [esp32p4]
++      version: 1.0.4
++    - name: espressif/esp_ipa
++      registry_url: https://components.espressif.com
++      require: private
++      rules:
++      - if: target in [esp32p4]
++      version: 1.3.*
++    - name: idf
++      require: private
++      version: '>=5.4'
++    - name: espressif/usb_host_uvc
++      registry_url: https://components.espressif.com
++      require: private
++      rules:
++      - if: target in [esp32p4, esp32s3]
++      version: 2.4.*
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    targets:
++    - esp32p4
++    - esp32s3
++    - esp32c3
++    - esp32c5
++    - esp32c6
++    - esp32c61
++    version: 2.0.0
+   espressif/esp_wifi_remote:
+     component_hash: 4ed1ebe454d63ddb4a91bbd8db74a6f883c85a863db1f79770c57fbd2e5c134c
+     dependencies:
+@@ -78,16 +192,40 @@ dependencies:
+     - esp32p4
+     - esp32h4
+     version: e4c0ec3caab3d9c25374de7047653b9ced8f14ff
++  espressif/usb_host_uvc:
++    component_hash: f20c4e4dea50536e2e29daaf589b5f5984402284c155867daef27d6b64869f78
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.0'
++    - name: espressif/usb
++      registry_url: https://components.espressif.com
++      require: public
++      rules:
++      - if: idf_version >=6.0
++      - if: target not in ["linux"]
++      version: ^1.0.0
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    targets:
++    - esp32s2
++    - esp32s3
++    - esp32p4
++    - esp32h4
++    - linux
++    version: 2.4.2
+   idf:
+     source:
+       type: idf
+     version: 5.5.3
+ direct_dependencies:
+ - espressif/esp_hosted
++- espressif/esp_video
+ - espressif/esp_wifi_remote
+ - espressif/mdns
+ - espressif/tinyusb
+ - idf
+-manifest_hash: 482087bc40f0e187795a9ef9ad08ef15a585b4cdabc296c715a9d19284622150
++manifest_hash: 6c33cd6adcf8b9c87cc4862d8d6238dcc2dab1ae44535f5e3b8eccf86d9611ea
+ target: esp32p4
+ version: 2.0.0
+diff --git a/ports/esp32/machine_sdcard.c b/ports/esp32/machine_sdcard.c
+index 0f8bd8446..f7f71cd3d 100644
+--- a/ports/esp32/machine_sdcard.c
++++ b/ports/esp32/machine_sdcard.c
+@@ -39,6 +39,9 @@
+ #include "driver/sdspi_host.h"
+ #include "sdmmc_cmd.h"
+ #include "esp_log.h"
++#if MICROPY_OPENMV
++#include "omv_sdcard.h"
++#endif
+ 
+ #define DEBUG 0
+ #if DEBUG
+@@ -307,6 +310,9 @@ static mp_obj_t machine_sdcard_make_new(const mp_obj_type_t *type, size_t n_args
+     else {
+         sdmmc_host_t _temp_host = SDMMC_HOST_DEFAULT();
+         _temp_host.max_freq_khz = freq / 1000;
++        #if MICROPY_OPENMV
++        check_esp_err(omv_esp32_sdcard_preinit_host(&_temp_host, slot_num));
++        #endif
+         self->host = _temp_host;
+     }
+     #endif
+@@ -431,6 +437,9 @@ static mp_obj_t sd_deinit(mp_obj_t self_in) {
+             // SD card used a (dedicated) SPI bus, so free that SPI bus.
+             spi_bus_free(self->host.slot);
+         }
++        #if MICROPY_OPENMV
++        omv_esp32_sdcard_deinit_host(&self->host, self->host.slot);
++        #endif
+         self->flags &= ~SDCARD_CARD_FLAGS_HOST_INIT_DONE;
+     }
+ 
+diff --git a/ports/esp32/main/idf_component.yml b/ports/esp32/main/idf_component.yml
+index 176e29c3c..d0fd41819 100644
+--- a/ports/esp32/main/idf_component.yml
++++ b/ports/esp32/main/idf_component.yml
+@@ -20,5 +20,9 @@ dependencies:
+     rules:
+       - if: "target == esp32"
+       - if: "idf_version >=5.3"
++  espressif/esp_video:
++    version: "2.0.0"
++    rules:
++      - if: "target == esp32p4"
+   idf:
+     version: ">=5.2.0"
+diff --git a/ports/esp32/qstrdefsport.h b/ports/esp32/qstrdefsport.h
+index 47e22388b..6408f0948 100644
+--- a/ports/esp32/qstrdefsport.h
++++ b/ports/esp32/qstrdefsport.h
+@@ -29,3 +29,35 @@
+ 
+ // Entries for sys.path
+ Q(/lib)
++
++// OpenMV image API keywords that are not reliably discovered by the ESP32 qstr scan.
++Q(zero)
++Q(to_ndarray)
++Q(to_depth)
++Q(to_evt_dark)
++Q(to_evt_light)
++Q(draw_event_histogram)
++Q(rsub)
++Q(HaarCascade)
++Q(bias)
++Q(mul)
++Q(unsharp)
++Q(sharpen)
++Q(color_sigma)
++Q(space_sigma)
++Q(find_qrcodes)
++Q(qrcode)
++Q(payload)
++Q(version)
++Q(ecc_level)
++Q(mask)
++Q(data_type)
++Q(eci)
++Q(is_numeric)
++Q(is_alphanumeric)
++Q(is_binary)
++Q(is_kanji)
++Q(find_template)
++Q(step)
++Q(search)
++Q(ESP32Display)
+-- 
+2.34.1
+
+
+From 7f6adc73159bb45a8ecc1fc739c601a6b012a791 Mon Sep 17 00:00:00 2001
+From: yanke <yanke2@espressif.com>
+Date: Thu, 9 Apr 2026 15:38:18 +0800
+Subject: [PATCH 4/6] feat: support wifi and msc
+
+---
+ .../boards/ESP32_P4X_EYE/mpconfigboard.cmake  |  1 +
+ .../boards/ESP32_P4X_EYE/mpconfigboard.h      |  9 +++--
+ .../ESP32_P4X_EYE/partitions-16MiB-openmv.csv |  7 ++--
+ ports/esp32/boards/sdkconfig.p4x_eye          | 12 +++++++
+ .../esp32/lockfiles/dependencies.lock.esp32p4 | 34 +++++++++++++------
+ ports/esp32/main/idf_component.yml            |  4 +--
+ 6 files changed, 50 insertions(+), 17 deletions(-)
+
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
+index 7d2dbe889..4eba664d8 100644
+--- a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
++++ b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.cmake
+@@ -2,6 +2,7 @@ set(IDF_TARGET esp32p4)
+ 
+ set(SDKCONFIG_DEFAULTS
+     boards/sdkconfig.base
++    boards/sdkconfig.p4_wifi_common
+     boards/sdkconfig.p4x_eye
+     boards/ESP32_P4X_EYE/sdkconfig.board
+ )
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
+index 0439200e0..85984e3da 100644
+--- a/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
++++ b/ports/esp32/boards/ESP32_P4X_EYE/mpconfigboard.h
+@@ -17,6 +17,11 @@
+ #define MICROPY_HW_USB_MANUFACTURER_STRING "OpenMV"
+ #define MICROPY_HW_USB_PRODUCT_FS_STRING "OpenMV Virtual Comm Port in HS Mode"
+ #define MICROPY_HW_USB_CDC_INTERFACE_STRING "OpenMV CDC"
++#define MICROPY_HW_USB_MSC                 (1)
++#define MICROPY_HW_USB_MSC_INTERFACE_STRING "OpenMV Flash"
++#define MICROPY_HW_USB_MSC_INQUIRY_VENDOR_STRING "OpenMV  "
++#define MICROPY_HW_USB_MSC_INQUIRY_PRODUCT_STRING "ESP32P4 Flash   "
++#define MICROPY_HW_USB_MSC_INQUIRY_REVISION_STRING "1.00"
+ 
+ #define MICROPY_PY_ESPNOW                (0)
+ 
+@@ -31,9 +36,9 @@
+ 
+ #define MICROPY_PY_MACHINE_I2S          (1)
+ 
+-// Disable Wi-Fi and Bluetooth by default, these are re-enabled in the WIFI variants
++// Disable Bluetooth by default.
+ #ifndef MICROPY_PY_NETWORK_WLAN
+-#define MICROPY_PY_NETWORK_WLAN         (0)
++#define MICROPY_PY_NETWORK_WLAN         (1)
+ #endif
+ #ifndef MICROPY_PY_BLUETOOTH
+ #define MICROPY_PY_BLUETOOTH            (0)
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv b/ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv
+index f3a19bc55..97b89c401 100644
+--- a/ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv
++++ b/ports/esp32/boards/ESP32_P4X_EYE/partitions-16MiB-openmv.csv
+@@ -1,12 +1,13 @@
+ # OpenMV ESP32P4 16MiB flash partition table.
+-# Keep a single large factory app partition and let MicroPython auto-register
+-# the remaining flash as the "vfs" FAT filesystem at boot.
++# Keep a single large factory app partition and reserve the remaining flash
++# as a static FAT filesystem partition for /flash.
+ #
+ # 16MiB flash end: 0x1000000
+ # factory end:     0x710000
+-# auto-vfs size:   0x8F0000 (~8.9MiB)
++# ffat size:       0x8F0000 (~8.9MiB)
+ #
+ # Name,   Type, SubType, Offset,  Size, Flags
+ nvs,      data, nvs,     0x9000,  0x6000,
+ phy_init, data, phy,     0xf000,  0x1000,
+ factory,  app,  factory, 0x10000, 0x700000,
++ffat,     data, fat,     0x710000, 0x8F0000,
+diff --git a/ports/esp32/boards/sdkconfig.p4x_eye b/ports/esp32/boards/sdkconfig.p4x_eye
+index 725a44928..c5b15ad9a 100644
+--- a/ports/esp32/boards/sdkconfig.p4x_eye
++++ b/ports/esp32/boards/sdkconfig.p4x_eye
+@@ -32,3 +32,15 @@ CONFIG_CAMERA_OV2710_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
+ CONFIG_CAMERA_OV2710_MIPI_RAW10_1280X720_25FPS=y
+ CONFIG_CAMERA_OV2710_MIPI_DEFAULT_FMT_RAW10_1280X720_25FPS=y
+ CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y
++
++# Hosted
++CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
++CONFIG_ESP_HOSTED_P4_DEV_BOARD_NONE=y
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CMD_SLOT_1=27
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CLK_SLOT_1=28
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D0_SLOT_1=29
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=30
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=31
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=32
++CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=9
++
+diff --git a/ports/esp32/lockfiles/dependencies.lock.esp32p4 b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+index 6b1c0004a..32e8edef8 100644
+--- a/ports/esp32/lockfiles/dependencies.lock.esp32p4
++++ b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+@@ -59,7 +59,7 @@ dependencies:
+       type: service
+     version: 1.0.4
+   espressif/esp_hosted:
+-    component_hash: 53544436deb5fcbfdbf4a8e2c643cdbe31126556781784278c016d674df99cd2
++    component_hash: 9eea9ce83444a412b4a02311f787f3639a5d29fe67e6df83863010dd68ab250b
+     dependencies:
+     - name: idf
+       require: private
+@@ -67,7 +67,7 @@ dependencies:
+     source:
+       registry_url: https://components.espressif.com/
+       type: service
+-    version: 2.7.0
++    version: 2.12.0
+   espressif/esp_ipa:
+     component_hash: 31003e536f0d26158e10d7fcf2448b6377ce1148518287d0f34ed3b6c942c6d8
+     dependencies:
+@@ -148,25 +148,25 @@ dependencies:
+     - esp32c61
+     version: 2.0.0
+   espressif/esp_wifi_remote:
+-    component_hash: 4ed1ebe454d63ddb4a91bbd8db74a6f883c85a863db1f79770c57fbd2e5c134c
++    component_hash: 5dc0b754dca5fdfd0430602f2f771432d1d6ce8b0cf33c26726528f64c9a911a
+     dependencies:
+-    - name: espressif/eppp_link
+-      registry_url: https://components.espressif.com
+-      require: private
+-      version: '>=0.1'
+     - name: espressif/esp_hosted
+       registry_url: https://components.espressif.com
+       require: private
+       rules:
+       - if: target in [esp32h2, esp32p4]
+-      version: '>=0.0.6'
++      version: '>=2.11'
++    - name: espressif/wifi_remote_over_eppp
++      registry_url: https://components.espressif.com
++      require: private
++      version: '>=0.1'
+     - name: idf
+       require: private
+       version: '>=5.3'
+     source:
+       registry_url: https://components.espressif.com/
+       type: service
+-    version: 0.15.2
++    version: 1.4.0
+   espressif/mdns:
+     component_hash: 46ee81d32fbf850462d8af1e83303389602f6a6a9eddd2a55104cb4c063858ed
+     dependencies:
+@@ -215,6 +215,20 @@ dependencies:
+     - esp32h4
+     - linux
+     version: 2.4.2
++  espressif/wifi_remote_over_eppp:
++    component_hash: 06d8bc15348bbd21f1390daace36ed5adcf6026c93c5b69decc55fa04df2711a
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.3'
++    - name: espressif/eppp_link
++      registry_url: https://components.espressif.com
++      require: private
++      version: '>=0.1'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 0.3.2
+   idf:
+     source:
+       type: idf
+@@ -226,6 +240,6 @@ direct_dependencies:
+ - espressif/mdns
+ - espressif/tinyusb
+ - idf
+-manifest_hash: 6c33cd6adcf8b9c87cc4862d8d6238dcc2dab1ae44535f5e3b8eccf86d9611ea
++manifest_hash: 4a4ee49ddc69d6bed7961db68fee0ba8a95e480e57000e32b6acd554cba6f0e7
+ target: esp32p4
+ version: 2.0.0
+diff --git a/ports/esp32/main/idf_component.yml b/ports/esp32/main/idf_component.yml
+index d0fd41819..6222bdbd3 100644
+--- a/ports/esp32/main/idf_component.yml
++++ b/ports/esp32/main/idf_component.yml
+@@ -10,11 +10,11 @@ dependencies:
+   espressif/esp_hosted:
+     rules:
+       - if: "target == esp32p4"
+-    version: "2.7.0"
++    version: "2.12.0"
+   espressif/esp_wifi_remote:
+     rules:
+       - if: "target == esp32p4"
+-    version: "0.15.2"
++    version: "1.4.0"
+   espressif/lan867x:
+     version: "~1.0.0"
+     rules:
+-- 
+2.34.1
+
+
+From 4abf1a5a79cd10bb05a603952e90bbc8f27108ba Mon Sep 17 00:00:00 2001
+From: yanke <yanke2@espressif.com>
+Date: Wed, 15 Apr 2026 18:53:50 +0800
+Subject: [PATCH 5/6] feat: support barcode and apriltag
+
+---
+ ports/esp32/qstrdefsport.h | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/ports/esp32/qstrdefsport.h b/ports/esp32/qstrdefsport.h
+index 6408f0948..1ab810e3b 100644
+--- a/ports/esp32/qstrdefsport.h
++++ b/ports/esp32/qstrdefsport.h
+@@ -45,6 +45,42 @@ Q(unsharp)
+ Q(sharpen)
+ Q(color_sigma)
+ Q(space_sigma)
++Q(find_barcodes)
++Q(barcode)
++Q(type)
++Q(rotation)
++Q(quality)
++Q(find_apriltags)
++Q(apriltag)
++Q(families)
++Q(fx)
++Q(fy)
++Q(cx)
++Q(cy)
++Q(cxf)
++Q(cyf)
++Q(area)
++Q(name)
++Q(decision_margin)
++Q(hamming)
++Q(goodness)
++Q(pose)
++Q(x_translation)
++Q(y_translation)
++Q(z_translation)
++Q(x_rotation)
++Q(y_rotation)
++Q(z_rotation)
++Q(TAG16H5)
++Q(TAG25H7)
++Q(TAG25H9)
++Q(TAG36H10)
++Q(TAG36H11)
++Q(ARTOOLKIT)
++Q(find_circles)
++Q(x_margin)
++Q(y_margin)
++Q(r_margin)
+ Q(find_qrcodes)
+ Q(qrcode)
+ Q(payload)
+-- 
+2.34.1
+
+
+From 7925108d99477947c1db85f72394a29d3c7c63c1 Mon Sep 17 00:00:00 2001
+From: yanke <yanke2@espressif.com>
+Date: Fri, 24 Apr 2026 18:42:33 +0800
+Subject: [PATCH 6/6] feat: add esp32p4x_function_ev_board support
+
+---
+ ports/esp32/boards/ESP32_P4X_EYE/board.json   |  2 +-
+ .../ESP32_P4X_FUNCTION_EV_BOARD/board.json    | 18 ++++++++
+ .../ESP32_P4X_FUNCTION_EV_BOARD/board.md      |  4 ++
+ .../mpconfigboard.cmake                       |  8 ++++
+ .../mpconfigboard.h                           | 39 ++++++++++++++++
+ .../partitions-16MiB-openmv.csv               | 13 ++++++
+ .../sdkconfig.board                           |  3 ++
+ .../boards/sdkconfig.p4x_function_ev_board    | 45 +++++++++++++++++++
+ .../esp32/lockfiles/dependencies.lock.esp32p4 |  5 ++-
+ ports/esp32/main/idf_component.yml            |  4 ++
+ 10 files changed, 138 insertions(+), 3 deletions(-)
+ create mode 100644 ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.json
+ create mode 100644 ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.md
+ create mode 100644 ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.cmake
+ create mode 100644 ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.h
+ create mode 100644 ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/partitions-16MiB-openmv.csv
+ create mode 100644 ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/sdkconfig.board
+ create mode 100644 ports/esp32/boards/sdkconfig.p4x_function_ev_board
+
+diff --git a/ports/esp32/boards/ESP32_P4X_EYE/board.json b/ports/esp32/boards/ESP32_P4X_EYE/board.json
+index 26fc96580..7bf595c01 100644
+--- a/ports/esp32/boards/ESP32_P4X_EYE/board.json
++++ b/ports/esp32/boards/ESP32_P4X_EYE/board.json
+@@ -10,7 +10,7 @@
+         "ISP",
+         "MIPI_CSI"
+     ],
+-    "mcu": "esp32p4",
++    "mcu": "esp32p4x",
+     "product": "ESP32-P4X-EYE",
+     "thumbnail": "",
+     "url": "https://www.espressif.com/en/products/modules",
+diff --git a/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.json b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.json
+new file mode 100644
+index 000000000..a09a16af7
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.json
+@@ -0,0 +1,18 @@
++{
++    "deploy": [
++        "../deploy.md"
++    ],
++    "deploy_options": {
++        "flash_offset": "0x2000"
++    },
++    "docs": "",
++    "features": [
++        "ISP",
++        "MIPI_CSI"
++    ],
++    "mcu": "esp32p4x",
++    "product": "ESP32-P4X-Function-EV-Board",
++    "thumbnail": "",
++    "url": "https://www.espressif.com/en/products/devkits",
++    "vendor": "Espressif"
++}
+diff --git a/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.md b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.md
+new file mode 100644
+index 000000000..6628298de
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/board.md
+@@ -0,0 +1,4 @@
++This firmware target is for the ESP32-P4 Function EV Board OpenMV bring-up.
++
++Peripheral pins are adapted in the OpenMV board layer and should be validated
++incrementally before enabling camera, display, and SD card support.
+diff --git a/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.cmake b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.cmake
+new file mode 100644
+index 000000000..0df452b62
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.cmake
+@@ -0,0 +1,8 @@
++set(IDF_TARGET esp32p4)
++
++set(SDKCONFIG_DEFAULTS
++    boards/sdkconfig.base
++    boards/sdkconfig.p4_wifi_common
++    boards/sdkconfig.p4x_function_ev_board
++    boards/ESP32_P4X_FUNCTION_EV_BOARD/sdkconfig.board
++)
+diff --git a/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.h b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.h
+new file mode 100644
+index 000000000..1b1dd1aa8
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/mpconfigboard.h
+@@ -0,0 +1,39 @@
++#ifndef MICROPY_HW_BOARD_NAME
++#define MICROPY_HW_BOARD_NAME "ESP32-P4 Function EV Board"
++#endif
++
++#ifndef MICROPY_HW_MCU_NAME
++#define MICROPY_HW_MCU_NAME "ESP32P4"
++#endif
++
++#define MICROPY_WRAP_TUD_CDC_RX_CB(name) __mp_##name
++#define MICROPY_WRAP_TUD_EVENT_HOOK_CB(name) __mp_##name
++
++#define MICROPY_HW_USB_VID 0x37C5
++#define MICROPY_HW_USB_PID 0x1206
++#define MICROPY_HW_USB_MANUFACTURER_STRING "OpenMV"
++#define MICROPY_HW_USB_PRODUCT_FS_STRING "OpenMV Virtual Comm Port in HS Mode"
++#define MICROPY_HW_USB_CDC_INTERFACE_STRING "OpenMV CDC"
++#define MICROPY_HW_USB_MSC                 (1)
++#define MICROPY_HW_USB_MSC_INTERFACE_STRING "OpenMV Flash"
++#define MICROPY_HW_USB_MSC_INQUIRY_VENDOR_STRING "OpenMV  "
++#define MICROPY_HW_USB_MSC_INQUIRY_PRODUCT_STRING "ESP32P4 Flash   "
++#define MICROPY_HW_USB_MSC_INQUIRY_REVISION_STRING "1.00"
++
++#define MICROPY_PY_ESPNOW                (0)
++
++#define MICROPY_HW_ENABLE_SDCARD         (1)
++
++#ifndef USB_SERIAL_JTAG_PACKET_SZ_BYTES
++#define USB_SERIAL_JTAG_PACKET_SZ_BYTES (64)
++#endif
++
++#define MICROPY_HW_ENABLE_UART_REPL     (1)
++#define MICROPY_PY_MACHINE_I2S          (1)
++
++#ifndef MICROPY_PY_NETWORK_WLAN
++#define MICROPY_PY_NETWORK_WLAN         (1)
++#endif
++#ifndef MICROPY_PY_BLUETOOTH
++#define MICROPY_PY_BLUETOOTH            (0)
++#endif
+diff --git a/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/partitions-16MiB-openmv.csv b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/partitions-16MiB-openmv.csv
+new file mode 100644
+index 000000000..97b89c401
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/partitions-16MiB-openmv.csv
+@@ -0,0 +1,13 @@
++# OpenMV ESP32P4 16MiB flash partition table.
++# Keep a single large factory app partition and reserve the remaining flash
++# as a static FAT filesystem partition for /flash.
++#
++# 16MiB flash end: 0x1000000
++# factory end:     0x710000
++# ffat size:       0x8F0000 (~8.9MiB)
++#
++# Name,   Type, SubType, Offset,  Size, Flags
++nvs,      data, nvs,     0x9000,  0x6000,
++phy_init, data, phy,     0xf000,  0x1000,
++factory,  app,  factory, 0x10000, 0x700000,
++ffat,     data, fat,     0x710000, 0x8F0000,
+diff --git a/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/sdkconfig.board b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/sdkconfig.board
+new file mode 100644
+index 000000000..cc9c69996
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_P4X_FUNCTION_EV_BOARD/sdkconfig.board
+@@ -0,0 +1,3 @@
++CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
++CONFIG_PARTITION_TABLE_CUSTOM=y
++CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="boards/ESP32_P4X_FUNCTION_EV_BOARD/partitions-16MiB-openmv.csv"
+diff --git a/ports/esp32/boards/sdkconfig.p4x_function_ev_board b/ports/esp32/boards/sdkconfig.p4x_function_ev_board
+new file mode 100644
+index 000000000..ecc895541
+--- /dev/null
++++ b/ports/esp32/boards/sdkconfig.p4x_function_ev_board
+@@ -0,0 +1,45 @@
++# Select the minimum chip revision to cover all possible boards.
++CONFIG_ESP32P4_REV_MIN_0=y
++
++# Flash
++CONFIG_FLASHMODE_QIO=y
++CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
++
++# Memory
++CONFIG_SPIRAM=y
++CONFIG_SPIRAM_MEMTEST=
++CONFIG_SPIRAM_IGNORE_NOTFOUND=y
++CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y
++CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=50768
++CONFIG_SPIRAM_SPEED_250M=y
++CONFIG_IDF_EXPERIMENTAL_FEATURES=y
++
++# ULP: not fixed
++CONFIG_SOC_ULP_SUPPORTED=n
++CONFIG_ULP_COPROC_ENABLED=n
++CONFIG_ULP_COPROC_TYPE_FSM=n
++
++# SOC
++CONFIG_CACHE_L2_CACHE_256KB=y
++CONFIG_CACHE_L2_CACHE_LINE_128B=y
++
++# FreeRtos
++CONFIG_FREERTOS_HZ=1000
++
++# Camera
++CONFIG_CAMERA_SC2336=y
++CONFIG_CAMERA_SC2336_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
++CONFIG_CAMERA_SC2336_MIPI_RAW8_1280X720_30FPS=y
++CONFIG_CAMERA_SC2336_MIPI_DEFAULT_FMT_RAW8_1280X720_30FPS=y
++CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y
++
++# Hosted
++CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
++CONFIG_ESP_HOSTED_P4_DEV_BOARD_NONE=y
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CMD_SLOT_1=19
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CLK_SLOT_1=18
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D0_SLOT_1=14
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=15
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=16
++CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=17
++CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=54
+diff --git a/ports/esp32/lockfiles/dependencies.lock.esp32p4 b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+index 32e8edef8..177064472 100644
+--- a/ports/esp32/lockfiles/dependencies.lock.esp32p4
++++ b/ports/esp32/lockfiles/dependencies.lock.esp32p4
+@@ -20,7 +20,7 @@ dependencies:
+       require: private
+       version: '>=5.2'
+     source:
+-      registry_url: https://components.espressif.com
++      registry_url: https://components.espressif.com/
+       type: service
+     version: 1.1.4
+   espressif/esp_cam_sensor:
+@@ -234,12 +234,13 @@ dependencies:
+       type: idf
+     version: 5.5.3
+ direct_dependencies:
++- espressif/eppp_link
+ - espressif/esp_hosted
+ - espressif/esp_video
+ - espressif/esp_wifi_remote
+ - espressif/mdns
+ - espressif/tinyusb
+ - idf
+-manifest_hash: 4a4ee49ddc69d6bed7961db68fee0ba8a95e480e57000e32b6acd554cba6f0e7
++manifest_hash: c24eddf5dbad58838ff59473b0e5522eb0e0b4e1447d06fc84ed0c00d69f7c8b
+ target: esp32p4
+ version: 2.0.0
+diff --git a/ports/esp32/main/idf_component.yml b/ports/esp32/main/idf_component.yml
+index 6222bdbd3..fe1ed411e 100644
+--- a/ports/esp32/main/idf_component.yml
++++ b/ports/esp32/main/idf_component.yml
+@@ -24,5 +24,9 @@ dependencies:
+     version: "2.0.0"
+     rules:
+       - if: "target == esp32p4"
++  espressif/eppp_link:
++    version: "1.1.4"
++    rules:
++      - if: "target == esp32p4"
+   idf:
+     version: ">=5.2.0"
+-- 
+2.34.1
+

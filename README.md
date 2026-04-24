@@ -1,125 +1,149 @@
-[![Firmware Build 🔥](https://github.com/openmv/openmv/actions/workflows/firmware.yml/badge.svg)](https://github.com/openmv/openmv/actions/workflows/firmware.yml)
-[![GitHub license](https://img.shields.io/github/license/openmv/openmv?label=license%20%E2%9A%96)](https://github.com/openmv/openmv/blob/master/LICENSE)
-![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/openmv/openmv?sort=semver)
-[![GitHub forks](https://img.shields.io/github/forks/openmv/openmv?color=green)](https://github.com/openmv/openmv/network)
-[![GitHub stars](https://img.shields.io/github/stars/openmv/openmv?color=yellow)](https://github.com/openmv/openmv/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/openmv/openmv?color=orange)](https://github.com/openmv/openmv/issues)
+# ESP-OpenMV
 
-<img  width="480" src="https://raw.githubusercontent.com/openmv/openmv-media/master/logos/openmv-logo/logo.png">
+[![OpenMV](https://img.shields.io/badge/OpenMV-4.8.1-00A3E0)](https://github.com/openmv/openmv/tree/v4.8.1)
+[![MicroPython](https://img.shields.io/badge/MicroPython-v1.27.0-2B2728)](https://github.com/openmv/micropython/tree/366b6bd242fa068e4ee03a5c516e8cfa7d10c374)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.3-E7352C)](https://github.com/espressif/esp-idf/releases/tag/v5.5.3)
 
-# The Open-Source Machine Vision Project
-  - [Overview](#overview)
-  - [TensorFlow support](#tensorflow-support)
-  - [Interface library](#interface-library)
-    + [Note on serial port](#note-on-serial-port)
-  - [ Building the firmware from source](#building-the-firmware-from-source)
-  - [Contributing to the project](#contributing-to-the-project)
-    + [Contribution guidelines](#contribution-guidelines)
-    
-## Overview
+[中文说明](README_ZH.md)
 
-The OpenMV project brings machine vision to beginners with a user-friendly, open-source platform. OpenMV cameras are programmable in Python3 and feature advanced AI capabilities, including support for TensorFlow, ST Edge AI, and NPU acceleration through ARM Ethos-U55 and ST Neural-ART. The firmware includes a rich image image processing library, such as image filtering, feature detection, color tracking, QR and barcode decoding, AprilTag recognition, GIF and MJPEG recording and streaming, and much more.
+ESP-OpenMV brings the power of the [OpenMV](https://github.com/openmv/openmv) ecosystem to ESP32, enabling developers to build intelligent, connected vision projects with the simplicity of MicroPython and the robustness of Espressif hardware.
 
-The latest generation of OpenMV cameras includes the N6 and AE3 models. The OpenMV-N6 is powered by the STM32N6 microcontroller, which features a 1GHz/600 GOPS NPU, hardware H.264 encoding, high-speed USB, ISP, GPU, and a high-speed μSD card slot. It also comes equipped with WiFi/BLE, Gigabit Ethernet, and extensive GPIO pins—combining the power of a single-board computer with the flexibility of a microcontroller.
+| AprilTag | Canny |
+| --- | --- |
+| ![AprilTag demo](https://dl.espressif.com/AE/esp-iot-solution/openmv/apriltag.gif) | ![Canny demo](https://dl.espressif.com/AE/esp-iot-solution/openmv/canny.gif) |
+| Color Detect | QR Code |
+| ![Color detection demo](https://dl.espressif.com/AE/esp-iot-solution/openmv/color_detect.gif) | ![QR code demo](https://dl.espressif.com/AE/esp-iot-solution/openmv/qrcode.gif) |
 
-The OpenMV-AE3 is our smallest and most energy-efficient camera yet powered by the Alif Ensemble E3, with dual-core processors and dual Ethos-U55 NPUs. This ultra-low-power device can run YOLO models at 30 FPS while drawing only 0.25 W, and it consumes just 2.5 mW in deep sleep mode. It features a 1MP high-frame-rate color global shutter camera, an IMU, a microphone, an 8×8 distance sensor, and connectivity options such as high-speed USB, WiFi/BLE, and QWIIC—making it ideal for battery-powered AI vision applications.
+## Supported Boards
 
-<p align="center"><img width="320" src="https://github.com/openmv/openmv-media/blob/2cef6b1eb4dff065e99f3cda0892aadabfd841cb/boards/openmv-cam/openmv-ae3/ae3-hero-crop.jpg"></p>
+| Board | Status |
+| --- | --- |
+| ESP32-P4X-EYE | Supported |
+| ESP32-P4X-FUNCTION-EV-BOARD | Supported |
 
-Complementing the firmware is an intuitive, cross-platform IDE based on Qt Creator, specifically designed for machine vision development. The IDE lets users view the camera’s frame buffer in real time, adjust sensor settings, and run scripts directly on the device. It also provides a range of tools for image analysis, including tag generation, threshold definition, keypoint detection, and other processing functions.
+## Features
 
-The OpenMV project was successfully funded on Kickstarter in 2015 and has evolved significantly since its inception. For more information, visit [https://openmv.io](https://openmv.io).
+### Core Runtime
 
-## Interface library
+- OpenMV IDE connection and script execution
+- OpenMV-style MicroPython soft reset loop
+- USB CDC debug channel for OpenMV IDE
+- Internal `/flash` filesystem
+- USB MSC export of internal `/flash`
+- `/sdcard` local storage through `machine.SDCard`
 
-The OpenMV Cam comes built-in with an RPC (Remote Python/Procedure Call) library which makes it easy to connect the OpenMV Cam to another microcontroller like the Arduino or ESP8266/32. The RPC Interface Library works over:
+### Camera
 
-* Async Serial (UART) - at up **7.5 Mb/s** on the OpenMV Cam H7.
-* I2C Bus - at up to **1 Mb/s** on the OpenMV Cam H7.
-  * Using 1K pull up resistors.
-* SPI Bus - at up to **20 Mb/s** on the OpenMV Cam H7.
-  * Up to **80 Mb/s** or **40 Mb/s** is achievable with short enough wires.
-* CAN Bus - at up to **1 Mb/s** on the OpenMV Cam H7.
+- Camera support based on `esp_video`
+- PPA crop, scale, mirror, and flip pipeline
+- `sensor.snapshot()`
+- `sensor.skip_frames()`
+- `sensor.set_pixformat(sensor.RGB565)`
+- `sensor.set_pixformat(sensor.GRAYSCALE)`
+- `sensor.set_framesize(sensor.QVGA)`
+- `sensor.set_framesize(sensor.QQVGA)`
+- `sensor.set_hmirror()` / `sensor.set_vflip()`
+- Manual IDE preview refresh through `img.flush()`
 
-With the RPC Library you can easily get image processing results, stream RAW or JPG image data, or have the OpenMV Cam control another Microcontroller for lower-level hardware control like driving motors.
+### Display
 
-You can find examples that run on the OpenMV Cam under `File->Examples->Remote Control` in OpenMV IDE and online [here](scripts/examples/34-Remote-Control). Finally, OpenMV provides the following libraries for interfacing your OpenMV Cam to other systems below:
+- LCD support through the OpenMV `display` module on ESP32-P4X-EYE
+- `display.ESP32Display`
+- RGB565 LCD output
+- Backlight control
 
-* [Arduino Interface Library for CAN, I2C, SPI, UART Comms](https://github.com/openmv/openmv-arduino-rpc)
-  * Works on all Arduino variants.
-  * CAN support via the MCP2515 over SPI or via the CAN peripheral on the ESP32.
+### Image Processing
 
-#### Note on serial port
+- Image file loading from `/flash` and `/sdcard`
+- Basic drawing APIs: line, rectangle, circle, ellipse, string, cross, arrow
+- Grayscale conversion
+- Binary thresholding
+- Frame difference
+- Color blob detection
+- Canny edge detection
+- Basic filters: mean, median, mode, midpoint, morph, gaussian, laplacian, bilateral
+- Negate
+- QR code detection
+- Barcode detection
+- Template matching
+- AprilTag detection with optional pose calculation disabled by `pose=False`
 
-If you only need to read `print()` output from a script running on an OpenMV camera over USB, then you only need to open the OpenMV camera Virtual COM Port and read lines of text from the serial port. For example (using [pyserial](https://pythonhosted.org/pyserial/index.html)):
+### Wi-Fi
 
-```Python
-import serial
-ser = serial.Serial("COM3", timeout=1, dsrdtr=False)
-while True:
-    line = ser.readline().strip()
-    if line: print(line)
-```
-The above code works for Windows, Mac, or Linux. You just need to change the above port name to the same name of the USB VCP port the OpenMV Cam shows up as (it will be under `/dev/` on Mac or Linux). Note that if you are opening the USB VCP port using another serial library and/or language make sure to set the DTR line to false - otherwise the OpenMV Cam will suppress printed output.
+- MicroPython `network.WLAN`
+- Wi-Fi STA connection
+- Python-level HTTP MJPEG preview example
 
-## Building the firmware from source
+Note: long-running Python network services may make the OpenMV IDE connection less stable because the Python script occupies the main execution loop.
 
-The easiest way to patch the firmware and rebuild it, is to fork this repository, enable Actions (from the Actions tab) in the forked repository, and pushing the changes. Our GitHub workflow rebuilds the firmware on pushes to the master branch and/or merging pull requests and generates a development release with attached separate firmware packages per supported board. For more complex changes, and building the OpenMV firmware from source locally, see [Building the Firmware From Source](https://github.com/openmv/openmv/blob/master/docs/firmware.md).
+## ESP Launchpad
 
-For more information about customizing your OpenMV Cam's configuration see [Board Configuration](docs/boards.md).
+ESP Launchpad flashing support will be added later.
 
-## Contributing to the project
+## Build, Flash, and Monitor
 
-Contributions are most welcome. If you are interested in contributing to the project, start by creating a fork of each of the following repositories:
+This project keeps `lib/micropython` as an upstream submodule and applies local MicroPython changes through `micropython.patch`. Apply the patch before building:
 
-* https://github.com/openmv/openmv.git
-* https://github.com/openmv/micropython.git
-
-Clone the forked openmv repository, and add a remote to the main openmv repository:
 ```bash
-git clone --recursive https://github.com/<username>/openmv.git
-git -C openmv remote add upstream https://github.com/openmv/openmv.git
+git submodule update --init --depth=1 --no-single-branch
+git -C lib/micropython submodule update --init --depth=1
+git -C lib/micropython apply --check ../../micropython.patch
+git -C lib/micropython apply ../../micropython.patch
 ```
 
-Set the `origin` remote of the micropython submodule to the forked micropython repo:
+Use the ESP-IDF `v5.5.3` tag:
+
 ```bash
-git -C openmv/src/micropython remote set-url origin https://github.com/<username>/micropython.git
+cd /path/to/esp-idf
+git checkout v5.5.3
+./install.sh
+source ./export.sh
 ```
 
-Finally add a remote to openmv's micropython fork:
+Build:
+
 ```bash
-git -C openmv/src/micropython remote add upstream https://github.com/openmv/micropython.git
+make -j$(nproc) TARGET=ESP32_P4X_EYE
+make -j$(nproc) TARGET=ESP32_P4X_FUNCTION_EV_BOARD
 ```
 
-Now the repositories are ready for pull requests. To send a pull request, create a new feature branch and push it to origin, and use Github to create the pull request from the forked repository to the upstream openmv/micropython repository. For example:
+Flash:
+
 ```bash
-git checkout -b <some_branch_name>
-<commit changes>
-git push origin -u <some_branch_name>
+make TARGET=ESP32_P4X_EYE ESPPORT=/dev/ttyACM0 deploy
+make TARGET=ESP32_P4X_FUNCTION_EV_BOARD ESPPORT=/dev/ttyACM0 deploy
 ```
 
-### Contribution guidelines
-Please follow the [best practices](https://developers.google.com/blockly/guides/modify/contribute/write_a_good_pr) when sending pull requests upstream. In general, the pull request should:
-* Fix one problem. Don't try to tackle multiple issues at once.
-* Split the changes into logical groups using git commits.
-* Pull request title should be less than 78 characters, and match this pattern:
-  * `<scope>:<1 space><description><.>`
-* Commit subject line should be less than 78 characters, and match this pattern:
-  * `<scope>:<1 space><description><.>`
+Monitor:
 
-Example PR titles or commit subject lines:
-```
-github: Update workflows.
-Libtf: Add support for built-in models.
-RPC library: Remove CAN bit timing function.
-OPENMV4: Add readme template file.
-ports/stm32/main.c: Fix storage label.
+```bash
+make TARGET=ESP32_P4X_EYE ESPPORT=/dev/ttyACM0 monitor
+make TARGET=ESP32_P4X_FUNCTION_EV_BOARD ESPPORT=/dev/ttyACM0 monitor
 ```
 
-### Licensing
+Change `ESPPORT` to match your host device node. `ESPBAUD` can also be passed to `deploy` or `monitor` when a custom baud rate is needed.
 
-Most of the code in the repository is licensed under the MIT license, with the following exceptions:
+## Board Porting Flow
 
-* Some image library code is licensed under the GPL. This includes AGAST, LSD, and ZBAR. GPL code can be completely disabled in a build by defining `OMV_NO_GPL` in the `imlib_config.h` files.
-* Third-party libraries and drivers in `lib` and `drivers` are licensed under various permissive licenses. Please consult the LICENSE file in each driver/library subdirectory for more details.
-* Some drivers, modules, and libraries in OpenMV are proprietary and available for non-commercial use only. These proprietary components can be disabled during the build process. Official OpenMV hardware and licensed devices may use the proprietary code. For commercial licensing options, contact openmv@openmv.io.
+Use the existing ESP32-P4 boards as templates when adding a new board.
+
+1. `[MicroPython]` Add the MicroPython board directory at `lib/micropython/ports/esp32/boards/<TARGET>`, including `board.json`, `mpconfigboard.cmake`, `mpconfigboard.h`, `sdkconfig.board`, and the partition table.
+2. `[MicroPython]` Put board-specific ESP-IDF defaults in `lib/micropython/ports/esp32/boards/<TARGET>/sdkconfig.board`, for example flash size, partition table path, PSRAM, or component Kconfig options.
+3. `[MicroPython]` Add shared ESP32 board sdkconfig fragments under `lib/micropython/ports/esp32/boards/` when needed, for example `lib/micropython/ports/esp32/boards/sdkconfig.<board>`.
+4. `[OpenMV]` Add the OpenMV board directory at `boards/<TARGET>`, including `omv_boardconfig.h`, `omv_boardconfig.mk`, `omv_pins.h`, `manifest.py`, and board hooks for camera, SD card, and display.
+5. `[OpenMV]` Keep board-specific pinmux, reset, power, and peripheral policy inside `boards/<TARGET>`. Do not add board-specific pin assumptions directly to `ports/esp32` unless the behavior is common to all ESP32 OpenMV boards.
+6. `[OpenMV]` Bring up storage first. Implement `boards/<TARGET>/omv_sdcard_board.c` for the board SD mode, then verify `/sdcard` mount, file write, readback, directory listing, and delete.
+7. `[OpenMV]` Bring up camera through `esp_video`. Fill the sensor ID, active crop window, input resolution, output QQVGA/QVGA sizes, SCCB policy, and optional XCLK policy in `boards/<TARGET>/omv_boardconfig.h` and `boards/<TARGET>/omv_camera_board.c`.
+8. `[OpenMV]` Keep display optional. If LCD is not ready, provide `boards/<TARGET>/omv_display_board.c` as a stub that returns `ESP_ERR_NOT_SUPPORTED` instead of partially initializing panel hardware.
+9. `[Repo]` Build from the repository root with `make -j$(nproc) TARGET=<TARGET>`, then test OpenMV IDE connection, `sensor.snapshot()`, `img.flush()`, SD card access, and the scripts in `ESP-OPENMV-FUNCTION-TESTS.md`.
+
+## Examples
+
+See [ESP-OPENMV-FUNCTION-TESTS.md](ESP-OPENMV-FUNCTION-TESTS.md) for camera, image processing, AprilTag, Wi-Fi preview, and LCD examples.
+
+## Current Limitations
+
+- Supported camera output is currently limited to `RGB565` / `GRAYSCALE` and `QVGA` / `QQVGA`.
+- LCD is currently supported on `ESP32-P4X-EYE`; `ESP32-P4X-FUNCTION-EV-BOARD` display support is not enabled yet.
+- Not all OpenMV image APIs have been systematically verified.
+- Wi-Fi MJPEG preview is currently implemented as a Python script; running it for a long time can affect OpenMV IDE responsiveness.
