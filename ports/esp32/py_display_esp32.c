@@ -10,7 +10,6 @@
 
 #include <string.h>
 
-#include "driver/spi_master.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -26,9 +25,10 @@ typedef struct _py_esp32_display_obj_t {
     py_display_obj_t base_obj;
     esp_lcd_panel_io_handle_t io_handle;
     esp_lcd_panel_handle_t panel_handle;
-    spi_host_device_t spi_host;
     uint16_t *framebuffer;
 } py_esp32_display_obj_t;
+
+static py_esp32_display_obj_t *omv_esp32_display_active = NULL;
 
 static void omv_esp32_display_set_backlight(py_display_obj_t *self_in, uint32_t intensity) {
     (void) self_in;
@@ -82,20 +82,18 @@ static void omv_esp32_display_clear(py_display_obj_t *self_in, bool display_off)
 static void omv_esp32_display_deinit(py_display_obj_t *self_in) {
     py_esp32_display_obj_t *self = (py_esp32_display_obj_t *) self_in;
 
-    if (self->panel_handle != NULL) {
-        esp_lcd_panel_disp_on_off(self->panel_handle, false);
-        esp_lcd_panel_del(self->panel_handle);
+    if (self->panel_handle != NULL || self->io_handle != NULL) {
+        omv_esp32_board_display_deinit_panel(self->io_handle, self->panel_handle);
         self->panel_handle = NULL;
-    }
-    if (self->io_handle != NULL) {
-        esp_lcd_panel_io_del(self->io_handle);
         self->io_handle = NULL;
     }
     if (self->framebuffer != NULL) {
         heap_caps_free(self->framebuffer);
         self->framebuffer = NULL;
     }
-    spi_bus_free(self->spi_host);
+    if (omv_esp32_display_active == self) {
+        omv_esp32_display_active = NULL;
+    }
 }
 
 static mp_obj_t omv_esp32_display_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
@@ -116,7 +114,11 @@ static mp_obj_t omv_esp32_display_make_new(const mp_obj_type_t *type, size_t n_a
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     if ((args[ARG_width].u_int != OMV_ESP32_LCD_H_RES) || (args[ARG_height].u_int != OMV_ESP32_LCD_V_RES)) {
-        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("only 240x240 is supported"));
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("unsupported display resolution"));
+    }
+
+    if (omv_esp32_display_active != NULL) {
+        omv_esp32_display_deinit(&omv_esp32_display_active->base_obj);
     }
 
     py_esp32_display_obj_t *self = mp_obj_malloc_with_finaliser(py_esp32_display_obj_t, &py_esp32_display_type);
@@ -133,7 +135,6 @@ static mp_obj_t omv_esp32_display_make_new(const mp_obj_type_t *type, size_t n_a
     self->base_obj.byte_swap = false;
     self->base_obj.controller = mp_const_none;
     self->base_obj.bl_controller = mp_const_none;
-    self->spi_host = (spi_host_device_t) OMV_ESP32_LCD_SPI_HOST;
 
     self->framebuffer = heap_caps_aligned_alloc(16,
                                                 self->base_obj.width * self->base_obj.height * sizeof(uint16_t),
@@ -149,12 +150,17 @@ static mp_obj_t omv_esp32_display_make_new(const mp_obj_type_t *type, size_t n_a
     memset(self->framebuffer, 0, self->base_obj.width * self->base_obj.height * sizeof(uint16_t));
 
     if (omv_esp32_board_display_brightness_init() != ESP_OK) {
+        heap_caps_free(self->framebuffer);
+        self->framebuffer = NULL;
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display backlight init failed"));
     }
-    if (omv_esp32_board_display_init_panel(self->spi_host, self->base_obj.width, self->base_obj.height,
+    if (omv_esp32_board_display_init_panel(self->base_obj.width, self->base_obj.height,
                                            &self->io_handle, &self->panel_handle) != ESP_OK) {
+        heap_caps_free(self->framebuffer);
+        self->framebuffer = NULL;
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("display panel init failed"));
     }
+    omv_esp32_display_active = self;
     omv_esp32_display_set_backlight(&self->base_obj, self->base_obj.intensity);
     omv_esp32_display_draw(self, NULL, 0, 0, 1.0f, 1.0f, NULL, -1, 255, NULL, NULL, 0);
 

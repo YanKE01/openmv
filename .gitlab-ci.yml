@@ -1,11 +1,16 @@
 stages:
   - build
 
-build_esp32_p4x_eye:
+build_esp32:
   stage: build
   image: espressif/idf:v5.5.3
   tags:
     - build
+  parallel:
+    matrix:
+      - TARGET:
+          - ESP32_P4X_EYE
+          - ESP32_P4X_FUNCTION_EV_BOARD
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push"'
@@ -16,9 +21,10 @@ build_esp32_p4x_eye:
     - git -C lib/micropython apply ../../micropython.patch
   script:
     - . /opt/esp/idf/export.sh
-    - make -j$(nproc) TARGET=ESP32_P4X_EYE
+    - make -j$(nproc) TARGET=$TARGET
   artifacts:
     when: on_success
+    name: "$CI_JOB_NAME-$TARGET"
     paths:
       - build/bin/
     expire_in: 1 week

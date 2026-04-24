@@ -1,8 +1,8 @@
-# P4X-EYE-OPENMV
+# ESP-OpenMV Function Tests
 
 ## Table of Contents
 
-- [P4X-EYE-OPENMV](#p4x-eye-openmv)
+- [ESP-OpenMV Function Tests](#esp-openmv-function-tests)
   - [Table of Contents](#table-of-contents)
   - [0. Build, Flash, and Monitor](#0-build-flash-and-monitor)
   - [1. Camera Test](#1-camera-test)
@@ -25,8 +25,8 @@
 ## 0. Build, Flash, and Monitor
 
 This project keeps `lib/micropython` as an upstream submodule and does not maintain a
-separate MicroPython fork in-tree. Before building `ESP32_P4X_EYE`, apply the
-repository-level `micropython.patch` to `lib/micropython`.
+separate MicroPython fork in-tree. Before building a release from upstream
+MicroPython, apply the repository-level `micropython.patch` to `lib/micropython`.
 
 ```bash
 git submodule update --init --depth=1 --no-single-branch
@@ -47,20 +47,25 @@ source ./export.sh
 Build firmware:
 
 ```bash
-make -j$(nproc) TARGET=ESP32_P4X_EYE
+make -j$(nproc) TARGET=<board-target>
 ```
 
 Flash firmware:
 
 ```bash
-make TARGET=ESP32_P4X_EYE ESPPORT=/dev/ttyACM0 deploy
+make TARGET=<board-target> ESPPORT=/dev/ttyACM0 deploy
 ```
 
 Monitor serial output:
 
 ```bash
-make TARGET=ESP32_P4X_EYE ESPPORT=/dev/ttyACM0 monitor
+make TARGET=<board-target> ESPPORT=/dev/ttyACM0 monitor
 ```
+
+Supported `<board-target>` values:
+
+* `ESP32_P4X_EYE`
+* `ESP32_P4X_FUNCTION_EV_BOARD`
 
 `ESPPORT` should be changed to the actual device node on your host. `ESPBAUD` can
 also be passed to `deploy` or `monitor` if a custom baud rate is required.
@@ -523,6 +528,8 @@ while True:
 ### 5.1 Peripheral Support
 
 #### 5.1.1 LCD Support
+
+This test only applies to boards with LCD support enabled.
 
 ```python
 import sensor

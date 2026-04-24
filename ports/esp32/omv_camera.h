@@ -10,7 +10,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef OMV_ESP32_CAMERA_SENSOR_ID
 #define OMV_ESP32_CAMERA_SENSOR_ID (0x2710)
+#endif
 
 void omv_esp32_camera_init0(void);
 int omv_esp32_camera_init(void);

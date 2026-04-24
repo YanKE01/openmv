@@ -25,7 +25,6 @@ import sys
 import vfs
 
 main_py = """import sensor
-import display
 import time
 
 sensor.reset()
@@ -33,11 +32,8 @@ sensor.set_pixformat(sensor.RGB565)
 sensor.set_framesize(sensor.QVGA)
 sensor.skip_frames(time=1000)
 
-lcd = display.ESP32Display(backlight=100)
-
 while True:
-    img = sensor.snapshot()
-    lcd.write(img)
+    sensor.snapshot()
     time.sleep_ms(10)
 """
 
