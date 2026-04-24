@@ -12,6 +12,8 @@ build_esp32_p4x_eye:
   before_script:
     - git submodule update --init --depth=1 --no-single-branch
     - git -C lib/micropython/ submodule update --init --depth=1
+    - git -C lib/micropython apply --check ../../micropython.patch
+    - git -C lib/micropython apply ../../micropython.patch
   script:
     - . /opt/esp/idf/export.sh
     - make -j$(nproc) TARGET=ESP32_P4X_EYE
